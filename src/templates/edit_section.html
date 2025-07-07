@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sectie Bewerken - {{ section.name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+        }
+        .flash-message {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+        }
+        .flash-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body class="p-6">
+    <div class="container mx-auto bg-white p-8 rounded-lg shadow-lg">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b-2 pb-4">Sectie Bewerken</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" class="space-y-6">
+            <!-- Basis Informatie -->
+            <div class="bg-gray-50 p-6 rounded-lg">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Basis Informatie</h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="name" class="block text-sm font-medium text-gray-700 mb-2">
+                            Naam *
+                        </label>
+                        <input type="text" id="name" name="name" required
+                               value="{{ form_data.get('name', section.name) }}"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="Bijv. Inleiding, Conclusie">
+                        <p class="text-xs text-gray-500 mt-1">De weergavenaam van de sectie</p>
+                    </div>
+
+                    <div>
+                        <label for="identifier" class="block text-sm font-medium text-gray-700 mb-2">
+                            Identifier *
+                        </label>
+                        <input type="text" id="identifier" name="identifier" required
+                               value="{{ form_data.get('identifier', section.identifier) }}"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="Bijv. inleiding, conclusie">
+                        <p class="text-xs text-gray-500 mt-1">Unieke code (kleine letters, underscores)</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Document Volgorde -->
+            <div class="bg-gray-50 p-6 rounded-lg">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Document Volgorde</h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="order_index" class="block text-sm font-medium text-gray-700 mb-2">
+                            Volgorde Nummer
+                        </label>
+                        <input type="number" id="order_index" name="order_index" min="1" step="10"
+                               value="{{ form_data.get('order_index', section.order_index) }}"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="Bijv. 10, 20, 30">
+                        <p class="text-xs text-gray-500 mt-1">Hoger nummer = later in document (gebruik stappen van 10)</p>
+                    </div>
+
+                    <div>
+                        <label for="level" class="block text-sm font-medium text-gray-700 mb-2">
+                            Kopniveau
+                        </label>
+                        <select id="level" name="level"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="">Selecteer niveau</option>
+                            <option value="1" {% if form_data.get('level', section.level) == 1 %}selected{% endif %}>H1 - Hoofdstuk</option>
+                            <option value="2" {% if form_data.get('level', section.level) == 2 %}selected{% endif %}>H2 - Subhoofdstuk</option>
+                            <option value="3" {% if form_data.get('level', section.level) == 3 %}selected{% endif %}>H3 - Sub-subhoofdstuk</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">Hiërarchisch niveau in document</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Instellingen -->
+            <div class="bg-gray-50 p-6 rounded-lg">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Instellingen</h3>
+                
+                <div class="space-y-4">
+                    <div class="flex items-center">
+                        <input type="checkbox" id="is_required" name="is_required"
+                               {% if form_data.get('is_required', 'on' if section.is_required else '') == 'on' %}checked{% endif %}
+                               class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                        <label for="is_required" class="ml-2 block text-sm text-gray-700">
+                            Deze sectie is verplicht in documenten
+                        </label>
+                    </div>
+                    
+                    <p class="text-xs text-gray-500">
+                        Verplichte secties worden gemarkeerd als ontbrekend als ze niet in een document worden gevonden.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Actie Knoppen -->
+            <div class="flex justify-between items-center pt-6 border-t">
+                <a href="{{ url_for('list_sections') }}" class="text-gray-600 hover:text-gray-800">
+                    ← Terug naar Secties
+                </a>
+                
+                <div class="space-x-4">
+                    <button type="reset" 
+                            class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+                        Herstel
+                    </button>
+                    <button type="submit" 
+                            class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-200">
+                        Wijzigingen Opslaan
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</body>
+</html> 

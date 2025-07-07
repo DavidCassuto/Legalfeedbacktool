@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Document - Feedback Tool{% endblock %}
+
+{% block content %}
+    <section class="upload-section">
+        <h2>Document Uploaden</h2>
+        <p>Upload hier je .docx bestand om feedback te ontvangen.</p>
+
+        {# Flash messages tonen #}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="flashes">
+                    {% for category, message in messages %}
+                        <li class="{{ category }}">{{ message }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" enctype="multipart/form-data" action="{{ url_for('upload_document') }}">
+            <div class="form-group">
+                <label for="file_input">Kies een bestand (.docx):</label>
+                <input type="file" name="file" id="file_input" accept=".docx" required>
+            </div>
+
+            <div class="form-group">
+                <label for="document_type_id">Documenttype:</label>
+                <select name="document_type_id" id="document_type_id" required>
+                    <option value="">-- Selecteer een documenttype --</option>
+                    {% for dt in document_types %}
+                        <option value="{{ dt.id }}" {% if dt.id == (form_data.document_type_id|int if form_data.document_type_id else -1) %}selected{% endif %}>
+                            {{ dt.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+                {# Foutmelding voor dit veld, indien aanwezig #}
+                {% if 'document_type_id' in form_data and not form_data.document_type_id %}
+                    <p class="error">Documenttype is verplicht.</p>
+                {% endif %}
+            </div>
+
+            <div class="form-group">
+                <label for="organization_id">Organisatie (optioneel):</label>
+                <select name="organization_id" id="organization_id">
+                    <option value="">-- Selecteer een organisatie (optioneel) --</option>
+                    {% for org in organizations %}
+                        <option value="{{ org.id }}" {% if org.id == (form_data.organization_id|int if form_data.organization_id else -1) %}selected{% endif %}>
+                            {{ org.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Uploaden en Analyseren</button>
+        </form>
+    </section>
+{% endblock %}

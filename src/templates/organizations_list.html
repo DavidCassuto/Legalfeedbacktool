@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+
+{% block title %}Organisaties{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>🏢 Organisaties</h1>
+    <div class="nav-breadcrumb">
+        <a href="{{ url_for('index') }}">Home</a> > Organisaties
+    </div>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3>Beheer Organisaties</h3>
+        <a href="{{ url_for('add_organization') }}" class="btn">➕ Nieuwe Organisatie</a>
+    </div>
+    
+    {% if organizations %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Organisatie</th>
+                <th>Beschrijving</th>
+                <th>Document Types</th>
+                <th>Acties</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for org in organizations %}
+            <tr>
+                <td>
+                    <strong>{{ org.name }}</strong>
+                </td>
+                <td>
+                    {% if org.description %}
+                        {{ org.description }}
+                    {% else %}
+                        <em style="color: #6C757D;">Geen beschrijving</em>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{{ url_for('list_organization_document_types', org_id=org.id) }}" class="btn" style="padding: 4px 8px; font-size: 12px;">
+                        📄 Document Types
+                    </a>
+                </td>
+                <td>
+                    <div style="display: flex; gap: 10px;">
+                        <a href="{{ url_for('edit_organization', id=org.id) }}" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;">
+                            ✏️ Bewerken
+                        </a>
+                        <form method="POST" action="{{ url_for('delete_organization', id=org.id) }}" style="display: inline;">
+                            <button type="submit" class="btn" style="padding: 4px 8px; font-size: 12px; background: #F94144; color: white;" 
+                                    onclick="return confirm('Weet je zeker dat je deze organisatie wilt verwijderen?')">
+                                🗑️ Verwijderen
+                            </button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="text-align: center; padding: 40px; color: #6C757D;">
+        <p>Nog geen organisaties toegevoegd.</p>
+        <a href="{{ url_for('add_organization') }}" class="btn">➕ Eerste Organisatie Toevoegen</a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h3>📋 Workflow voor Nieuwe Klanten</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
+        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+            <h4>1. Organisatie Aanmaken</h4>
+            <p>Maak een nieuwe organisatie aan voor de klant.</p>
+        </div>
+        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+            <h4>2. Document Types Definiëren</h4>
+            <p>Definieer welke soorten documenten de klant gaat uploaden.</p>
+        </div>
+        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+            <h4>3. Secties Koppelen</h4>
+            <p>Koppel relevante secties aan elk document type.</p>
+        </div>
+        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+            <h4>4. Criteria Instellen</h4>
+            <p>Selecteer en pas criteria aan voor feedback.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>🔄 Acties</h3>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary">← Terug naar Home</a>
+    <a href="{{ url_for('list_sections') }}" class="btn">📋 Secties Beheren</a>
+    <a href="{{ url_for('list_criteria_templates') }}" class="btn">✅ Criteria Templates</a>
+</div>
+{% endblock %} 

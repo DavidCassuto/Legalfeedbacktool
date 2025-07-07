@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Documenten Overzicht - Feedback Tool{% endblock %}
+
+{% block content %}
+    <section class="documents-list-section">
+        <h2>Overzicht van Geüploade Documenten</h2>
+        {% if documents %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Bestandsnaam</th>
+                        <th>Documenttype</th>
+                        <th>Organisatie</th>
+                        <th>Upload Datum</th>
+                        <th>Status</th>
+                        <th>Acties</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for doc in documents %}
+                    <tr>
+                        <td>{{ doc.id }}</td>
+                        <td><a href="{{ url_for('document_analysis', document_id=doc.id) }}">{{ doc.original_filename }}</a></td>
+                        <td>{{ doc.document_type_name }}</td>
+                        <td>{{ doc.organization_name if doc.organization_name else 'N/A' }}</td>
+                        <td>{{ doc.upload_date }}</td>
+                        <td>{{ doc.analysis_status }}</td>
+                        <td>
+                            <a href="{{ url_for('document_analysis', document_id=doc.id) }}" class="btn btn-sm">Bekijken</a>
+                            {# Voeg hier eventueel een delete knop toe later #}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>Nog geen documenten geüpload. <a href="{{ url_for('upload_document') }}">Upload het eerste document!</a></p>
+        {% endif %}
+        <p><a href="{{ url_for('upload_document') }}" class="btn btn-primary">Nieuw document uploaden</a></p>
+    </section>
+{% endblock %}

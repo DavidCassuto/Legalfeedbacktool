@@ -1,0 +1,6 @@
+
+Commandos om te onthouden
+$env:FLASK_APP="src/main.py"
+$env:FLASK_ENV="development"
+
+#gaat altijd vooraf aan flask init-db of flask run

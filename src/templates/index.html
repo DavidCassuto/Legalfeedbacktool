@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Welkom{% endblock %}
+
+{% block content %}
+<div class="jumbotron text-center bg-light p-5 rounded-3 shadow-sm">
+    <h1 class="display-4 text-primary">Welkom bij de Document Feedback Tool!</h1>
+    <p class="lead mt-3">Upload documenten, analyseer ze volgens vooraf gedefinieerde criteria en ontvang gedetailleerde feedback.</p>
+    <hr class="my-4">
+    <p>Begin met het uploaden van een nieuw document om feedback te genereren.</p>
+    {# AANGEPAST: url_for() verwijst nu naar de correcte functienaam 'upload_document' #}
+    <p><a href="{{ url_for('upload_document') }}" class="btn btn-primary btn-lg mt-3">Start Analyse (Upload Document)</a></p>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-4 mb-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="card-title text-secondary"><i class="fas fa-upload me-2"></i> Document Uploaden</h5>
+                <p class="card-text">Upload uw rapporten of scripties in .txt of .docx formaat.</p>
+                <a href="{{ url_for('upload_document') }}" class="btn btn-outline-primary btn-sm">Uploaden</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="card-title text-secondary"><i class="fas fa-list-alt me-2"></i> Documenten Overzicht</h5>
+                <p class="card-text">Bekijk alle geüploade documenten en hun analysestatus.</p>
+                <a href="{{ url_for('list_documents') }}" class="btn btn-outline-primary btn-sm">Bekijken</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="card-title text-secondary"><i class="fas fa-cogs me-2"></i> Criteria Beheer</h5>
+                <p class="card-text">Beheer de criteria waarop documenten worden geanalyseerd.</p>
+                <a href="{{ url_for('list_criteria') }}" class="btn btn-outline-primary btn-sm">Beheren</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="card-title text-secondary"><i class="fas fa-sitemap me-2"></i> Secties Beheer</h5>
+                <p class="card-text">Beheer de definities van documentsecties.</p>
+                <a href="{{ url_for('list_sections') }}" class="btn btn-outline-primary btn-sm">Beheren</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="card-title text-secondary"><i class="fas fa-file-alt me-2"></i> Documenttypes Beheer</h5>
+                <p class="card-text">Beheer de verschillende types documenten die ondersteund worden.</p>
+                <a href="{{ url_for('list_document_types') }}" class="btn btn-outline-primary btn-sm">Beheren</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="card-title text-secondary"><i class="fas fa-building me-2"></i> Organisaties Beheer</h5>
+                <p class="card-text">Beheer de organisaties die gebruik maken van de tool.</p>
+                <a href="{{ url_for('list_organizations') }}" class="btn btn-outline-primary btn-sm">Beheren</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

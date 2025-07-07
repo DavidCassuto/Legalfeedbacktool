@@ -1,0 +1,151 @@
+{% extends 'base.html' %} {# Dit vertelt Jinja2 dat deze template van base.html erft #}
+
+{% block title %}Analyse: {{ document.original_filename }}{% endblock %}
+
+{% block content %}
+    <div class="header">
+        <h1>📊 Document Analyse</h1>
+        <p>{{ document.original_filename }}</p>
+        <div class="nav-breadcrumb">
+            <a href="{{ url_for('index') }}">Home</a> > <a href="{{ url_for('list_documents') }}">Documenten</a> > Analyse
+        </div>
+    </div>
+    
+    <div class="card">
+        <h3>📄 Document Informatie</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+            <div>
+                <strong>Bestand:</strong><br>{{ document.original_filename }}
+            </div>
+            <div>
+                <strong>Type:</strong><br>{{ document_type.name }}
+            </div>
+            <div>
+                <strong>Upload:</strong><br>{{ document.upload_time.strftime('%d-%m-%Y %H:%M') }}
+            </div>
+            <div>
+                <strong>Status:</strong><br>
+                {% if document.analysis_status == 'completed' %}
+                    <span class="badge badge-success">✅ Geanalyseerd</span>
+                {% elif document.analysis_status == 'failed' %}
+                    <span class="badge badge-warning">❌ Fout</span>
+                {% else %}
+                    <span class="badge" style="background: #F9C74F; color: #2B2D42;">⏳ Bezig</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h3>🔍 Gevonden Secties</h3>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Sectie</th>
+                    <th>Status</th>
+                    <th>Woorden</th>
+                    <th>Confidence</th>
+                    <th>Acties</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for section in sections %}
+                <tr>
+                    <td>
+                        <strong>{{ section.name }}</strong>
+                        {% if section.level > 1 %}
+                            <small style="color: #6C757D;">(Niveau {{ section.level }})</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if section.found %}
+                            <span class="badge badge-success">✅ Gevonden</span>
+                        {% else %}
+                            <span class="badge badge-warning">❌ Ontbreekt</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ section.word_count or 0 }}</td>
+                    <td>
+                        {% if section.confidence %}
+                            <div style="background: #E9ECEF; border-radius: 10px; height: 20px; width: 100px; position: relative;">
+                                <div style="background: #84A98C; height: 100%; width: {{ (section.confidence * 100)|round }}%; border-radius: 10px;"></div>
+                                <span style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); font-size: 12px; line-height: 20px;">{{ (section.confidence * 100)|round }}%</span>
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <button class="btn" style="padding: 4px 8px; font-size: 12px;" onclick="showSectionContent('{{ section.id }}', '{{ section.name }}')">👁️ Bekijk</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="card">
+        <h3>💬 Feedback & Suggesties</h3>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px;">
+            <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #F94144;">{{ feedback_stats.violations }}</div>
+                <div style="font-size: 14px; color: #6C757D;">Overtredingen</div>
+            </div>
+            <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #F9C74F;">{{ feedback_stats.warnings }}</div>
+                <div style="font-size: 14px; color: #6C757D;">Waarschuwingen</div>
+            </div>
+            <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #84A98C;">{{ feedback_stats.passed }}</div>
+                <div style="font-size: 14px; color: #6C757D;">Correct</div>
+            </div>
+        </div>
+        
+        {% for feedback in feedback_items %}
+        <div style="background: #f8f9fa; border-left: 4px solid {{ feedback.color }}; padding: 15px; margin: 10px 0; border-radius: 0 8px 8px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div style="flex: 1;">
+                    <h4 style="color: {{ feedback.color }}; margin-bottom: 5px;">
+                        {{ feedback.criterion_name }}
+                        <small style="color: #6C757D; font-weight: normal;">({{ feedback.section_name }})</small>
+                    </h4>
+                    <p style="margin-bottom: 10px;">{{ feedback.message }}</p>
+                    {% if feedback.suggestion %}
+                    <p style="background: rgba(255,255,255,0.7); padding: 10px; border-radius: 5px; margin-bottom: 10px;">
+                        <strong>💡 Suggestie:</strong> {{ feedback.suggestion }}
+                    </p>
+                    {% endif %}
+                    {% if feedback.location %}
+                    <small style="color: #6C757D;">📍 Locatie: {{ feedback.location }}</small>
+                    {% endif %}
+                </div>
+                <div style="margin-left: 15px;">
+                    {% if feedback.status == 'violation' %}
+                        <span class="badge" style="background: #F94144; color: white;">❌ Fout</span>
+                    {% elif feedback.status == 'warning' %}
+                        <span class="badge" style="background: #F9C74F; color: #2B2D42;">⚠️ Waarschuwing</span>
+                    {% else %}
+                        <span class="badge badge-success">✅ OK</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div class="card">
+        <h3>🔄 Acties</h3>
+        <a href="{{ url_for('export_document', document_id=document.id) }}" class="btn">📄 Export Word met Feedback</a>
+        <a href="{{ url_for('reanalyze_document', document_id=document.id) }}" class="btn btn-secondary">🔄 Opnieuw Analyseren</a>
+        <a href="{{ url_for('upload_document') }}" class="btn">📤 Nieuw Document</a>
+        <a href="{{ url_for('list_documents') }}" class="btn btn-secondary">📋 Terug naar Overzicht</a>
+    </div>
+    
+    <script>
+    function showSectionContent(sectionId, sectionName) {
+        alert('Sectie inhoud bekijken voor: ' + sectionName + ' (ID: ' + sectionId + ')');
+        // Voor een echte implementatie:
+        // Haal sectie-inhoud op via een API-call of toon een modale pop-up met de inhoud
+        // Voor nu volstaat de alert.
+    }
+    </script>
+{% endblock %}

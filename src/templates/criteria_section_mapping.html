@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secties Koppelen - {{ criterion.name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .flash-message {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+        }
+        .flash-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .flash-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .section-card {
+            transition: all 0.2s ease-in-out;
+        }
+        .section-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .selected-section {
+            border-color: #10b981;
+            background-color: #f0fdf4;
+        }
+        .excluded-section {
+            border-color: #ef4444;
+            background-color: #fef2f2;
+        }
+    </style>
+</head>
+<body class="p-6">
+    <div class="container mx-auto bg-white p-8 rounded-lg shadow-lg">
+        <div class="flex justify-between items-center mb-6 border-b-2 pb-4">
+            <h1 class="text-3xl font-bold text-gray-800">Secties Koppelen</h1>
+            <div class="text-right">
+                <h2 class="text-xl font-semibold text-blue-600">{{ criterion.name }}</h2>
+                <p class="text-gray-600">{{ criterion.description or 'Geen beschrijving' }}</p>
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" class="space-y-6">
+            <!-- Toepassingsgebied Selectie -->
+            <div class="bg-gray-50 p-6 rounded-lg">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Toepassingsgebied</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label class="flex items-center p-4 border rounded-lg cursor-pointer hover:bg-gray-100">
+                        <input type="radio" name="application_scope" value="all" 
+                               {% if criterion.application_scope == 'all' %}checked{% endif %}
+                               class="mr-3 text-blue-600">
+                        <div>
+                            <div class="font-medium">Hele Document</div>
+                            <div class="text-sm text-gray-600">Criterium geldt voor het hele document</div>
+                        </div>
+                    </label>
+                    
+                    <label class="flex items-center p-4 border rounded-lg cursor-pointer hover:bg-gray-100">
+                        <input type="radio" name="application_scope" value="document_only" 
+                               {% if criterion.application_scope == 'document_only' %}checked{% endif %}
+                               class="mr-3 text-blue-600">
+                        <div>
+                            <div class="font-medium">Document Niveau</div>
+                            <div class="text-sm text-gray-600">Alleen op documentniveau, niet per sectie</div>
+                        </div>
+                    </label>
+                    
+                    <label class="flex items-center p-4 border rounded-lg cursor-pointer hover:bg-gray-100">
+                        <input type="radio" name="application_scope" value="specific_sections" 
+                               {% if criterion.application_scope == 'specific_sections' %}checked{% endif %}
+                               class="mr-3 text-blue-600">
+                        <div>
+                            <div class="font-medium">Specifieke Secties</div>
+                            <div class="text-sm text-gray-600">Alleen voor geselecteerde secties</div>
+                        </div>
+                    </label>
+                    
+                    <label class="flex items-center p-4 border rounded-lg cursor-pointer hover:bg-gray-100">
+                        <input type="radio" name="application_scope" value="exclude_sections" 
+                               {% if criterion.application_scope == 'exclude_sections' %}checked{% endif %}
+                               class="mr-3 text-blue-600">
+                        <div>
+                            <div class="font-medium">Uitsluitingen</div>
+                            <div class="text-sm text-gray-600">Hele document behalve geselecteerde secties</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Sectie Selectie -->
+            <div class="bg-gray-50 p-6 rounded-lg">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Sectie Selectie</h3>
+                
+                {% if all_sections %}
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {% for section in all_sections %}
+                            <div class="section-card border-2 border-gray-200 rounded-lg p-4 {% if section.id in mapped_sections and not mapped_sections[section.id].is_excluded %}selected-section{% elif section.id in mapped_sections and mapped_sections[section.id].is_excluded %}excluded-section{% endif %}">
+                                <div class="flex items-start justify-between">
+                                                                    <div class="flex-1">
+                                    <div class="flex items-center space-x-2">
+                                        {% if section.order_index %}
+                                            <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">{{ section.order_index }}</span>
+                                        {% endif %}
+                                        <h4 class="font-medium text-gray-800">{{ section.name }}</h4>
+                                    </div>
+                                    <p class="text-sm text-gray-600">{{ section.identifier }}</p>
+                                    {% if section.is_required %}
+                                        <span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded mt-1">Verplicht</span>
+                                    {% endif %}
+                                </div>
+                                    
+                                    <div class="flex flex-col space-y-2 ml-4">
+                                        <!-- Inclusie Checkbox -->
+                                        <label class="flex items-center">
+                                            <input type="checkbox" name="selected_sections" value="{{ section.id }}"
+                                                   {% if section.id in mapped_sections and not mapped_sections[section.id].is_excluded %}checked{% endif %}
+                                                   class="mr-2 text-green-600 rounded">
+                                            <span class="text-xs text-green-700">Inclusie</span>
+                                        </label>
+                                        
+                                        <!-- Exclusie Checkbox -->
+                                        <label class="flex items-center">
+                                            <input type="checkbox" name="excluded_sections" value="{{ section.id }}"
+                                                   {% if section.id in mapped_sections and mapped_sections[section.id].is_excluded %}checked{% endif %}
+                                                   class="mr-2 text-red-600 rounded">
+                                            <span class="text-xs text-red-700">Exclusie</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <div class="mt-4 p-4 bg-blue-50 rounded-lg">
+                        <h4 class="font-medium text-blue-800 mb-2">Instructies:</h4>
+                        <ul class="text-sm text-blue-700 space-y-1">
+                            <li>• <strong>Inclusie:</strong> Criterium geldt voor deze sectie</li>
+                            <li>• <strong>Exclusie:</strong> Criterium geldt NIET voor deze sectie</li>
+                            <li>• Een sectie kan niet tegelijk inclusie en exclusie zijn</li>
+                            <li>• Als geen secties geselecteerd zijn, geldt het criterium voor het hele document</li>
+                        </ul>
+                    </div>
+                {% else %}
+                    <div class="text-center py-8">
+                        <p class="text-gray-600">Nog geen secties gedefinieerd.</p>
+                        <a href="{{ url_for('add_section') }}" class="text-blue-600 hover:underline">Voeg een sectie toe</a>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Actie Knoppen -->
+            <div class="flex justify-between items-center pt-6 border-t">
+                <a href="{{ url_for('list_criteria') }}" class="text-gray-600 hover:text-gray-800">
+                    ← Terug naar Criteria
+                </a>
+                
+                <div class="space-x-4">
+                    <button type="button" onclick="clearAllSelections()" 
+                            class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+                        Wissen
+                    </button>
+                    <button type="submit" 
+                            class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-200">
+                        Opslaan
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        // Voorkom dat een sectie zowel inclusie als exclusie kan zijn
+        document.querySelectorAll('input[name="selected_sections"]').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                if (this.checked) {
+                    // Uncheck de exclusie checkbox voor dezelfde sectie
+                    const sectionId = this.value;
+                    const exclusionCheckbox = document.querySelector(`input[name="excluded_sections"][value="${sectionId}"]`);
+                    if (exclusionCheckbox) {
+                        exclusionCheckbox.checked = false;
+                    }
+                }
+                updateSectionStyling();
+            });
+        });
+
+        document.querySelectorAll('input[name="excluded_sections"]').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                if (this.checked) {
+                    // Uncheck de inclusie checkbox voor dezelfde sectie
+                    const sectionId = this.value;
+                    const inclusionCheckbox = document.querySelector(`input[name="selected_sections"][value="${sectionId}"]`);
+                    if (inclusionCheckbox) {
+                        inclusionCheckbox.checked = false;
+                    }
+                }
+                updateSectionStyling();
+            });
+        });
+
+        function updateSectionStyling() {
+            document.querySelectorAll('.section-card').forEach(card => {
+                card.classList.remove('selected-section', 'excluded-section');
+                
+                const sectionId = card.querySelector('input[name="selected_sections"]').value;
+                const inclusionChecked = card.querySelector('input[name="selected_sections"]').checked;
+                const exclusionChecked = card.querySelector('input[name="excluded_sections"]').checked;
+                
+                if (inclusionChecked) {
+                    card.classList.add('selected-section');
+                } else if (exclusionChecked) {
+                    card.classList.add('excluded-section');
+                }
+            });
+        }
+
+        function clearAllSelections() {
+            document.querySelectorAll('input[name="selected_sections"], input[name="excluded_sections"]').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            updateSectionStyling();
+        }
+
+        // Initial styling update
+        updateSectionStyling();
+    </script>
+</body>
+</html> 

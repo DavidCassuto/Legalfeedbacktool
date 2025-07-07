@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Criterium Bewerken: {{ criterion.name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .container {
+            max-width: 700px;
+        }
+        .flash-message {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+        }
+        .flash-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .flash-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .flash-danger {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body class="p-6">
+    <div class="container mx-auto bg-white p-8 rounded-lg shadow-lg">
+        <!-- Navigation header -->
+        <div class="mb-6 flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+                <a href="{{ url_for('list_criteria') }}" class="text-blue-600 hover:text-blue-800 font-medium">
+                    ← Terug naar Criteria Overzicht
+                </a>
+            </div>
+            <h1 class="text-3xl font-bold text-gray-800">Criterium Bewerken</h1>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form action="{{ url_for('edit_criterion', id=criterion.id) }}" method="POST" class="space-y-6">
+            <div>
+                <label for="name" class="block text-sm font-medium text-gray-700">Naam:</label>
+                <input type="text" id="name" name="name" value="{{ criterion.name }}" required
+                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            
+            <div>
+                <label for="document_type_id" class="block text-sm font-medium text-gray-700">Document Type:</label>
+                <select id="document_type_id" name="document_type_id" required
+                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">Selecteer een document type</option>
+                    {% for doc_type in document_types %}
+                        <option value="{{ doc_type.id }}" {% if current_doc_type_id == doc_type.id %}selected{% endif %}>
+                            {{ doc_type.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div>
+                <label for="description" class="block text-sm font-medium text-gray-700">Beschrijving:</label>
+                <textarea id="description" name="description" rows="3"
+                          class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">{{ criterion.description }}</textarea>
+            </div>
+            <div>
+                <label for="rule_type" class="block text-sm font-medium text-gray-700">Regeltype:</label>
+                <select id="rule_type" name="rule_type" required
+                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <option value="tekstueel" {% if criterion.rule_type == 'tekstueel' %}selected{% endif %}>Tekstueel</option>
+                    <option value="structureel" {% if criterion.rule_type == 'structureel' %}selected{% endif %}>Structureel</option>
+                    <option value="inhoudelijk" {% if criterion.rule_type == 'inhoudelijk' %}selected{% endif %}>Inhoudelijk</option>
+                    <option value="formattering" {% if criterion.rule_type == 'formattering' %}selected{% endif %}>Formattering</option>
+                </select>
+            </div>
+            <div>
+                <label for="application_scope" class="block text-sm font-medium text-gray-700">Toepassingsgebied:</label>
+                <select id="application_scope" name="application_scope" required
+                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <option value="all" {% if criterion.application_scope == 'all' %}selected{% endif %}>Volledig Document (alles)</option>
+                    <option value="document_only" {% if criterion.application_scope == 'document_only' %}selected{% endif %}>Alleen Document-breed (geen secties)</option>
+                    <option value="specific_sections" {% if criterion.application_scope == 'specific_sections' %}selected{% endif %}>Alleen Specifieke Secties</option>
+                    <option value="exclude_sections" {% if criterion.application_scope == 'exclude_sections' %}selected{% endif %}>Hele Document min Specifieke Secties</option>
+                </select>
+            </div>
+            <div class="flex items-center">
+                <input type="checkbox" id="is_enabled" name="is_enabled" {% if criterion.is_enabled %}checked{% endif %}
+                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                <label for="is_enabled" class="ml-2 block text-sm text-gray-900">Ingeschakeld</label>
+            </div>
+            <div>
+                <label for="severity" class="block text-sm font-medium text-gray-700">Ernst:</label>
+                <select id="severity" name="severity" required
+                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <option value="ok" {% if criterion.severity == 'ok' %}selected{% endif %}>OK</option>
+                    <option value="info" {% if criterion.severity == 'info' %}selected{% endif %}>Informatie</option>
+                    <option value="warning" {% if criterion.severity == 'warning' %}selected{% endif %}>Waarschuwing</option>
+                    <option value="violation" {% if criterion.severity == 'violation' %}selected{% endif %}>Overtreding</option>
+                    <option value="error" {% if criterion.severity == 'error' %}selected{% endif %}>Fout</option>
+                </select>
+            </div>
+            <div>
+                <label for="error_message" class="block text-sm font-medium text-gray-700">Foutbericht (als van toepassing):</label>
+                <input type="text" id="error_message" name="error_message" value="{{ criterion.error_message }}"
+                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div>
+                <label for="fixed_feedback_text" class="block text-sm font-medium text-gray-700">Voorgestelde Oplossing:</label>
+                <textarea id="fixed_feedback_text" name="fixed_feedback_text" rows="2"
+                          class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">{{ criterion.fixed_feedback_text }}</textarea>
+            </div>
+            <div>
+                <label for="frequency_unit" class="block text-sm font-medium text-gray-700">Frequentie Eenheid:</label>
+                <select id="frequency_unit" name="frequency_unit"
+                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <option value="document" {% if criterion.frequency_unit == 'document' %}selected{% endif %}>Document</option>
+                    <option value="section" {% if criterion.frequency_unit == 'section' %}selected{% endif %}>Sectie</option>
+                    <option value="paragraph" {% if criterion.frequency_unit == 'paragraph' %}selected{% endif %}>Paragraaf</option>
+                    <option value="occurrence" {% if criterion.frequency_unit == 'occurrence' %}selected{% endif %}>Voorkomen</option>
+                </select>
+            </div>
+            <div>
+                <label for="max_mentions_per" class="block text-sm font-medium text-gray-700">Max. aantal keer per eenheid (0=onbeperkt):</label>
+                <input type="number" id="max_mentions_per" name="max_mentions_per" value="{{ criterion.max_mentions_per }}" min="0"
+                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label for="expected_value_min" class="block text-sm font-medium text-gray-700">Minimale Verwachte Waarde:</label>
+                    <input type="number" step="0.01" id="expected_value_min" name="expected_value_min" value="{{ criterion.expected_value_min }}"
+                           class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label for="expected_value_max" class="block text-sm font-medium text-gray-700">Maximale Verwachte Waarde:</label>
+                    <input type="number" step="0.01" id="expected_value_max" name="expected_value_max" value="{{ criterion.expected_value_max }}"
+                           class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                </div>
+            </div>
+            <div>
+                <label for="color" class="block text-sm font-medium text-gray-700">Kleur (Hex Code, bijv. #FF0000):</label>
+                <input type="text" id="color" name="color" value="{{ criterion.color }}"
+                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            
+            <div class="flex justify-end space-x-3 pt-6 border-t">
+                <a href="{{ url_for('list_criteria') }}" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg shadow transition duration-200">Annuleren</a>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-200">Criterium Opslaan</button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Feedback Tool{% endblock %}</title>
+    <style>
+        /* === RESET EN BASIS STYLING === */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: linear-gradient(135deg, #F8F9FA 0%, #E9ECEF 100%); 
+            color: #2B2D42; 
+            min-height: 100vh; 
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+        /* === HEADER STYLING (GHIBLI KLEUREN) === */
+        .header { 
+            background: linear-gradient(135deg, #4D908E 0%, #52796F 100%); 
+            color: white; 
+            padding: 20px; 
+            border-radius: 15px; 
+            margin-bottom: 30px; 
+            box-shadow: 0 4px 15px rgba(77, 144, 142, 0.3); 
+        }
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+
+        /* === NAVIGATIE (NIEUW: Toegevoegd voor base.html) === */
+        .navbar {
+            background: rgba(255,255,255,0.1);
+            padding: 10px 20px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px; /* Ruimte onder de navbar */
+        }
+        .navbar-brand {
+            color: white;
+            font-size: 1.5em;
+            font-weight: bold;
+            text-decoration: none;
+        }
+        .navbar-nav {
+            list-style: none;
+            display: flex;
+            gap: 20px;
+        }
+        .navbar-nav a {
+            color: white;
+            text-decoration: none;
+            padding: 5px 10px;
+            transition: opacity 0.3s ease;
+        }
+        .navbar-nav a:hover {
+            opacity: 0.8;
+        }
+
+
+        /* === NAVIGATIE BREADCRUMB (bestaat al in jouw template) === */
+        .nav-breadcrumb { 
+            background: rgba(255,255,255,0.1); 
+            padding: 10px 15px; 
+            border-radius: 8px; 
+            margin-top: 15px; 
+        }
+        .nav-breadcrumb a { color: white; text-decoration: none; opacity: 0.8; }
+        .nav-breadcrumb a:hover { opacity: 1; }
+
+        /* === CARDS === */
+        .card { 
+            background: white; 
+            border-radius: 15px; 
+            padding: 25px; 
+            margin-bottom: 20px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1); 
+            border: 1px solid #E9ECEF; 
+        }
+
+        /* === BUTTONS (GHIBLI KLEUREN) === */
+        .btn { 
+            background: #4D908E; 
+            color: white; 
+            padding: 12px 20px; 
+            border: none; 
+            border-radius: 8px; 
+            text-decoration: none; 
+            display: inline-block; 
+            margin-right: 10px; 
+            margin-bottom: 10px; 
+            cursor: pointer; 
+            font-size: 16px; 
+            transition: all 0.3s ease; 
+        }
+        .btn:hover { 
+            background: #52796F; 
+            transform: translateY(-2px); 
+            box-shadow: 0 4px 10px rgba(77, 144, 142, 0.3); 
+        }
+        .btn-secondary { background: #F6BD60; color: #2B2D42; }
+        .btn-secondary:hover { background: #F4A261; }
+        .btn-danger { background: #F94144; }
+        .btn-danger:hover { background: #D90429; }
+        .btn-success { background: #84A98C; }
+        .btn-success:hover { background: #6A994E; }
+
+        /* === FORMULIEREN === */
+        .form-group { margin-bottom: 20px; }
+        .form-group label { 
+            display: block; 
+            margin-bottom: 8px; 
+            font-weight: 600; 
+            color: #2B2D42; 
+        }
+        .form-group input, .form-group textarea, .form-group select { 
+            width: 100%; 
+            padding: 12px; 
+            border: 2px solid #E9ECEF; 
+            border-radius: 8px; 
+            font-size: 16px; 
+            transition: border-color 0.3s ease; 
+        }
+        .form-group input:focus, .form-group textarea:focus, .form-group select:focus { 
+            outline: none; 
+            border-color: #4D908E; 
+            box-shadow: 0 0 0 3px rgba(77, 144, 142, 0.1); 
+        }
+        .form-group textarea { height: 120px; resize: vertical; }
+
+        /* === TABELLEN === */
+        .table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .table th, .table td { padding: 12px; text-align: left; border-bottom: 1px solid #E9ECEF; }
+        .table th { background: #F8F9FA; font-weight: 600; color: #2B2D42; }
+        .table tr:hover { background: #F8F9FA; }
+
+        /* === BADGES === */
+        .badge { 
+            display: inline-block; 
+            padding: 4px 8px; 
+            border-radius: 4px; 
+            font-size: 0.8em; 
+            font-weight: 600; 
+        }
+        .badge-success { background: #84A98C; color: white; }
+        .badge-warning { background: #F9C74F; color: #2B2D42; }
+
+        /* === LEGE STAAT === */
+        .empty-state { text-align: center; padding: 60px 20px; color: #6C757D; }
+        .empty-state h3 { margin-bottom: 10px; color: #495057; }
+
+        /* === FLASH MESSAGES === */
+        .flash-messages { margin-bottom: 20px; }
+        .alert {
+            padding: 15px; 
+            border-radius: 8px; 
+            margin-bottom: 10px; 
+            color: white;
+        }
+        .alert-success { background: #84A98C; }
+        .alert-warning { background: #F9C74F; color: #2B2D42; }
+        .alert-danger { background: #F94144; }
+        .alert-info { background: #4D908E; } /* Nieuwe kleur voor info flashes */
+    </style>
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <a href="{{ url_for('index') }}" class="navbar-brand">DocuCheck</a>
+            <ul class="navbar-nav">
+                <li><a href="{{ url_for('upload_document') }}">Upload</a></li>
+                <li><a href="{{ url_for('list_documents') }}">Documenten</a></li>
+                <li><a href="{{ url_for('list_criteria') }}">Criteria</a></li>
+                <li><a href="{{ url_for('list_sections') }}">Secties</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer>
+        <div class="container" style="text-align: center; color: #6C757D; margin-top: 40px; padding-top: 20px; border-top: 1px solid #E9ECEF;">
+            <p>&copy; {{ now.year }} DocuCheck. Alle rechten voorbehouden.</p>
+        </div>
+    </footer>
+    
+    </body>
+</html>

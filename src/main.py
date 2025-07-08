@@ -378,6 +378,9 @@ def document_analysis(document_id):
 @app.route('/documents/<int:document_id>/export')
 def export_document(document_id):
     """Export document met feedback naar Word document."""
+    # Haal comment type op uit query parameters
+    comment_type = request.args.get('comment_type', 'real')  # Default naar echte comments
+    
     db = get_db()
     
     # Haal document en analyse data op
@@ -424,17 +427,22 @@ def export_document(document_id):
         export_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'exports')
         os.makedirs(export_dir, exist_ok=True)
         
-        # Genereer output bestandsnaam
+        # Genereer output bestandsnaam met comment type indicator
         base_name = os.path.splitext(document['original_filename'])[0]
-        output_filename = f"{base_name}_met_feedback.docx"
+        comment_suffix = "_met_comments" if comment_type == 'real' else "_met_feedback"
+        output_filename = f"{base_name}{comment_suffix}.docx"
         output_path = os.path.join(export_dir, output_filename)
+        
+        # Bepaal of echte comments of tekst-based feedback gebruikt moet worden
+        use_real_comments = (comment_type == 'real')
         
         # Export naar Word met feedback
         exporter = WordFeedbackExporter()
         exporter.add_feedback_to_document(
             original_file_path=document['file_path'],
             feedback_data=analysis_data,
-            output_file_path=output_path
+            output_file_path=output_path,
+            use_real_comments=use_real_comments
         )
         
         # Stuur bestand naar gebruiker

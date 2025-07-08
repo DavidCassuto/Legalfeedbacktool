@@ -24,9 +24,19 @@
                 <a href="{{ url_for('reanalyze_document', document_id=document.id) }}" class="btn btn-warning btn-sm me-2">
                     <i class="fas fa-redo-alt me-1"></i> Opnieuw Analyseren
                 </a>
-                <a href="{{ url_for('export_document', document_id=document.id) }}" class="btn btn-success btn-sm me-2">
-                    <i class="fas fa-file-word me-1"></i> Export Word met Feedback
-                </a>
+                <div class="btn-group me-2" role="group">
+                    <button type="button" class="btn btn-success btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-file-word me-1"></i> Export Word met Feedback
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="{{ url_for('export_document', document_id=document.id, comment_type='real') }}">
+                            <i class="fas fa-comment-dots me-1"></i> Echte Word Comments
+                        </a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('export_document', document_id=document.id, comment_type='text') }}">
+                            <i class="fas fa-file-text me-1"></i> Tekst-based Feedback
+                        </a></li>
+                    </ul>
+                </div>
                 <a href="{{ url_for('list_documents') }}" class="btn btn-secondary btn-sm">
                     <i class="fas fa-arrow-left me-1"></i> Terug naar Documenten
                 </a>

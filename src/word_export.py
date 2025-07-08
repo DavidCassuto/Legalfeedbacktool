@@ -15,7 +15,7 @@ from docx.oxml import parse_xml
 import logging
 
 # Import nieuwe Word comments module
-from .word_comments import WordCommentManager
+from word_comments import WordCommentManager
 
 logger = logging.getLogger(__name__)
 

@@ -143,16 +143,22 @@ class WordCommentManager:
         status_icon = self._get_status_icon(status)
         comment_text = f"{status_icon} {comment_text}"
         
-        # Maak comment XML
-        comment_xml = f'''<w:comment w:id="{comment_id}" w:author="Legal Feedback Tool" w:date="2024-01-01T00:00:00Z">
-    <w:p>
-        <w:r>
-            <w:t>{comment_text}</w:t>
-        </w:r>
-    </w:p>
-</w:comment>'''
+        # Escape speciale karakters
+        comment_text = comment_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         
-        return ET.fromstring(comment_xml)
+        # Maak comment element met correcte namespace
+        comment = ET.Element('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}comment')
+        comment.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id', comment_id)
+        comment.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}author', 'Legal Feedback Tool')
+        comment.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}date', '2024-01-01T00:00:00Z')
+        
+        # Voeg paragraaf toe
+        p = ET.SubElement(comment, '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p')
+        r = ET.SubElement(p, '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r')
+        t = ET.SubElement(r, '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
+        t.text = comment_text
+        
+        return comment
     
     def _add_comment_reference(self, doc_root: ET.Element, comment_ref_id: str):
         """Voeg comment referentie toe aan document."""
@@ -160,15 +166,23 @@ class WordCommentManager:
         for paragraph in doc_root.findall('.//w:p', self.namespaces):
             # Voeg comment referentie toe aan eerste run
             for run in paragraph.findall('.//w:r', self.namespaces):
-                # Voeg comment referentie toe
-                comment_ref_xml = f'''<w:commentRangeStart w:id="{comment_ref_id}"/>
-<w:commentRangeEnd w:id="{comment_ref_id}"/>
-<w:r>
-    <w:commentReference w:id="{comment_ref_id}"/>
-</w:r>'''
+                # Maak comment referentie elementen met correcte namespace
+                comment_range_start = ET.Element('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}commentRangeStart')
+                comment_range_start.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id', comment_ref_id)
                 
-                comment_ref_element = ET.fromstring(comment_ref_xml)
-                run.append(comment_ref_element)
+                comment_range_end = ET.Element('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}commentRangeEnd')
+                comment_range_end.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id', comment_ref_id)
+                
+                comment_ref_run = ET.Element('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r')
+                comment_ref = ET.SubElement(comment_ref_run, '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}commentReference')
+                comment_ref.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id', comment_ref_id)
+                
+                # Voeg elementen toe aan de run
+                run.append(comment_range_start)
+                run.append(comment_range_end)
+                run.append(comment_ref_run)
+                
+                logger.info(f"Comment referentie toegevoegd met ID: {comment_ref_id}")
                 return  # Stop na eerste comment referentie
     
     def _get_status_icon(self, status: str) -> str:

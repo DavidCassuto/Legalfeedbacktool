@@ -14,6 +14,9 @@ from docx.oxml.ns import nsdecls
 from docx.oxml import parse_xml
 import logging
 
+# Import nieuwe Word comments module
+from .word_comments import WordCommentManager
+
 logger = logging.getLogger(__name__)
 
 class WordFeedbackExporter:
@@ -24,7 +27,7 @@ class WordFeedbackExporter:
         self.comment_id_counter = 1
     
     def add_feedback_to_document(self, original_file_path: str, feedback_data: Dict[str, Any], 
-                                output_file_path: Optional[str] = None) -> str:
+                                output_file_path: Optional[str] = None, use_real_comments: bool = True) -> str:
         """
         Voeg feedback toe aan het originele Word document als comments.
         
@@ -32,10 +35,31 @@ class WordFeedbackExporter:
             original_file_path: Pad naar het originele Word document
             feedback_data: Dictionary met feedback data
             output_file_path: Pad voor het output document (optioneel)
+            use_real_comments: Gebruik echte Word comments (True) of tekst-based feedback (False)
             
         Returns:
             Pad naar het aangepaste document
         """
+        try:
+            if use_real_comments:
+                # Gebruik nieuwe echte Word comments
+                logger.info("Gebruik echte Word comments...")
+                comment_manager = WordCommentManager()
+                return comment_manager.add_real_comments_to_document(
+                    original_file_path, feedback_data, output_file_path
+                )
+            else:
+                # Gebruik oude tekst-based aanpak
+                logger.info("Gebruik tekst-based feedback...")
+                return self._add_text_based_feedback(original_file_path, feedback_data, output_file_path)
+            
+        except Exception as e:
+            logger.error(f"Fout bij toevoegen feedback aan Word document: {e}")
+            raise
+    
+    def _add_text_based_feedback(self, original_file_path: str, feedback_data: Dict[str, Any], 
+                                output_file_path: Optional[str] = None) -> str:
+        """Oude tekst-based feedback implementatie."""
         try:
             # Open het originele document
             doc = Document(original_file_path)
@@ -75,12 +99,12 @@ class WordFeedbackExporter:
             
             # Sla het aangepaste document op
             doc.save(output_file_path)
-            logger.info(f"Document met feedback comments opgeslagen: {output_file_path}")
+            logger.info(f"Document met tekst-based feedback opgeslagen: {output_file_path}")
             
             return output_file_path
             
         except Exception as e:
-            logger.error(f"Fout bij toevoegen feedback aan Word document: {e}")
+            logger.error(f"Fout bij toevoegen tekst-based feedback: {e}")
             raise
     
     def _add_section_comments_simple(self, doc: Document, section: Dict[str, Any], feedback_items: List[Dict[str, Any]]):

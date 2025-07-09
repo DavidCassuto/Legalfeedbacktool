@@ -219,7 +219,7 @@ def initialize_db(conn: sqlite3.Connection):
             print(f"Waarschuwing: Parent sectie '{s_data['parent_name']}' niet gevonden voor '{s_data['name']}'. Zorg dat parent secties eerst worden gedefinieerd en ingevoegd.")
 
 
-    # Criteria (onveranderd, maar Idempotent)
+    # Criteria (verbeterd om dubbele inserts te voorkomen)
     criteria_data = [
         (1, 'Woordtelling Inleiding', 'De inleiding moet tussen de 5 en 200 woorden bevatten.', 'structureel', 'specific_sections', 1, 'warning', 'De inleiding is te kort of te lang.', 'Zorg dat de inleiding tussen de 5 en 200 woorden bevat.', 'section', 1, 5, 200, '#FFD700'),
         (2, 'SMART formulering Probleemstelling', 'De probleemstelling moet SMART geformuleerd zijn (Specifiek, Meetbaar, Acceptabel, Realistisch, Tijdgebonden).', 'inhoudelijk', 'specific_sections', 1, 'violation', 'De probleemstelling is niet SMART geformuleerd.', 'Herschrijf de probleemstelling volgens de SMART-principes.', 'section', 1, None, None, '#FF0000'),
@@ -228,26 +228,45 @@ def initialize_db(conn: sqlite3.Connection):
         (5, 'Verplichte sectie aanwezigheid: Probleemstelling', 'De probleemstelling sectie is verplicht voor dit documenttype.', 'structureel', 'document_only', 1, 'violation', 'De sectie "Probleemstelling" is niet gevonden in het document.', 'Zorg ervoor dat de sectie "Probleemstelling" duidelijk aanwezig is.', 'document', 1, None, None, '#FF0000'),
         (6, 'Sectievolgorde: Inleiding voor Methode', 'De inleiding moet voor de methodesectie komen.', 'structureel', 'document_only', 1, 'violation', 'De sectie "Methode" staat vóór de "Inleiding".', 'Controleer de volgorde van de secties. De Inleiding moet voor de Methode-sectie komen.', 'document', 1, None, None, '#FF0000')
     ]
+    
+    # Controleer eerst welke criteria al bestaan
+    existing_criteria = cursor.execute("SELECT id, name FROM criteria").fetchall()
+    existing_ids = {row[0] for row in existing_criteria}
+    existing_names = {row[1] for row in existing_criteria}
+    
     for crit_id, name, desc, r_type, app_scope, enabled, severity, err_msg, fix_txt, freq_unit, max_mentions, min_val, max_val, color in criteria_data:
+        # Skip als criterium al bestaat (op ID of naam)
+        if crit_id in existing_ids or name in existing_names:
+            print(f"Skipping existing criterion: {name}")
+            continue
+            
         cursor.execute("""
-            INSERT OR IGNORE INTO criteria (id, name, description, rule_type, application_scope, is_enabled, severity, error_message, fixed_feedback_text, frequency_unit, max_mentions_per, expected_value_min, expected_value_max, color)
+            INSERT INTO criteria (id, name, description, rule_type, application_scope, is_enabled, severity, error_message, fixed_feedback_text, frequency_unit, max_mentions_per, expected_value_min, expected_value_max, color)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (crit_id, name, desc, r_type, app_scope, enabled, severity, err_msg, fix_txt, freq_unit, max_mentions, min_val, max_val, color))
 
-    # Mappings: DocumentType naar Criteria
+    # Mappings: DocumentType naar Criteria (alleen voor nieuwe criteria)
     rapport_type_id = cursor.execute("SELECT id FROM document_types WHERE identifier = 'rapport'").fetchone()[0]
     for criteria_id in [1, 2, 3, 4, 5, 6]:
+        if criteria_id in existing_ids:
+            continue  # Skip als criterium al bestond
         cursor.execute("INSERT OR IGNORE INTO document_type_criteria_mappings (document_type_id, criteria_id) VALUES (?, ?)", (rapport_type_id, criteria_id))
 
-    # Mappings: Criteria naar Specifieke Secties (IDs ophalen NA invoegen van alle secties)
-    # Dit is belangrijk: zorg dat alle secties zijn ingevoegd voordat je mappings maakt.
-    inleiding_id = cursor.execute("SELECT id FROM sections WHERE identifier = 'inleiding'").fetchone()[0]
-    probleemstelling_id = cursor.execute("SELECT id FROM sections WHERE identifier = 'probleemanalyse'").fetchone()[0] # Koppel aan de top-level 'probleemanalyse'
-    methode_id = cursor.execute("SELECT id FROM sections WHERE identifier = 'methode'").fetchone()[0]
-    
-    cursor.execute("INSERT OR IGNORE INTO criteria_section_mappings (criteria_id, section_id, is_excluded) VALUES (?, ?, ?)", (1, inleiding_id, 0))
-    cursor.execute("INSERT OR IGNORE INTO criteria_section_mappings (criteria_id, section_id, is_excluded) VALUES (?, ?, ?)", (2, probleemstelling_id, 0)) 
-    cursor.execute("INSERT OR IGNORE INTO criteria_section_mappings (criteria_id, section_id, is_excluded) VALUES (?, ?, ?)", (4, methode_id, 0))
+    # Mappings: Criteria naar Specifieke Secties (alleen voor nieuwe criteria)
+    try:
+        inleiding_id = cursor.execute("SELECT id FROM sections WHERE identifier = 'inleiding'").fetchone()[0]
+        probleemstelling_id = cursor.execute("SELECT id FROM sections WHERE identifier = 'probleemanalyse'").fetchone()[0]
+        methode_id = cursor.execute("SELECT id FROM sections WHERE identifier = 'methode'").fetchone()[0]
+        
+        # Alleen mappings toevoegen voor criteria die nieuw zijn toegevoegd
+        if 1 not in existing_ids:
+            cursor.execute("INSERT OR IGNORE INTO criteria_section_mappings (criteria_id, section_id, is_excluded) VALUES (?, ?, ?)", (1, inleiding_id, 0))
+        if 2 not in existing_ids:
+            cursor.execute("INSERT OR IGNORE INTO criteria_section_mappings (criteria_id, section_id, is_excluded) VALUES (?, ?, ?)", (2, probleemstelling_id, 0))
+        if 4 not in existing_ids:
+            cursor.execute("INSERT OR IGNORE INTO criteria_section_mappings (criteria_id, section_id, is_excluded) VALUES (?, ?, ?)", (4, methode_id, 0))
+    except (TypeError, IndexError) as e:
+        print(f"Warning: Could not create section mappings: {e}")
 
     conn.commit()
 

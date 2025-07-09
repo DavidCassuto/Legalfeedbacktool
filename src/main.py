@@ -495,53 +495,67 @@ def add_criterion():
 
     if request.method == 'POST':
         doc_type_id = request.form.get('document_type_id') 
-        name = request.form['name']
-        description = request.form.get('description')
+        name = request.form['name'].strip()
+        description = request.form.get('description', '').strip()
         rule_type = request.form.get('rule_type')
         application_scope = request.form.get('application_scope')
         severity = request.form.get('severity')
         is_enabled = 1 if request.form.get('is_enabled') == 'on' else 0
-        error_message = request.form.get('error_message')
-        fixed_feedback_text = request.form.get('fixed_feedback_text')
+        error_message = request.form.get('error_message', '').strip()
+        fixed_feedback_text = request.form.get('fixed_feedback_text', '').strip()
         frequency_unit = request.form.get('frequency_unit')
         max_mentions_per = request.form.get('max_mentions_per')
         expected_value_min = request.form.get('expected_value_min')
         expected_value_max = request.form.get('expected_value_max')
         color = request.form.get('color')
 
-        doc_type_id = int(doc_type_id) if doc_type_id else None
-        max_mentions_per = int(max_mentions_per) if max_mentions_per and max_mentions_per.isdigit() else 0
-        expected_value_min = float(expected_value_min) if expected_value_min else None
-        expected_value_max = float(expected_value_max) if expected_value_max else None
-
-        if not name or not doc_type_id or not rule_type or not application_scope:
-            flash('Naam, documenttype, regeltype en toepassingsgebied zijn verplicht!', 'danger')
+        # Validatie
+        if not name:
+            flash('Naam is verplicht!', 'danger')
+        elif not doc_type_id:
+            flash('Documenttype is verplicht!', 'danger')
+        elif not rule_type:
+            flash('Regeltype is verplicht!', 'danger')
+        elif not application_scope:
+            flash('Toepassingsgebied is verplicht!', 'danger')
         else:
-            try:
-                cursor = db.cursor()
-                cursor.execute(
-                    '''INSERT INTO criteria (
-                        name, description, rule_type, application_scope, is_enabled, severity,
-                        error_message, fixed_feedback_text, frequency_unit, max_mentions_per,
-                        expected_value_min, expected_value_max, color
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                    (name, description, rule_type, application_scope, is_enabled, severity,
-                     error_message, fixed_feedback_text, frequency_unit, max_mentions_per,
-                     expected_value_min, expected_value_max, color)
-                )
-                criterion_id = cursor.lastrowid
+            # Check voor duplicaten
+            existing = db.execute('SELECT id FROM criteria WHERE name = ?', (name,)).fetchone()
+            if existing:
+                flash(f'Er bestaat al een criterium met de naam "{name}"!', 'danger')
+            else:
+                try:
+                    # Data type conversies
+                    doc_type_id = int(doc_type_id) if doc_type_id else None
+                    max_mentions_per = int(max_mentions_per) if max_mentions_per and max_mentions_per.isdigit() else 0
+                    expected_value_min = float(expected_value_min) if expected_value_min else None
+                    expected_value_max = float(expected_value_max) if expected_value_max else None
 
-                db.execute(
-                    'INSERT INTO document_type_criteria_mappings (document_type_id, criteria_id) VALUES (?, ?)',
-                    (doc_type_id, criterion_id)
-                )
-                db.commit()
-                flash('Criterium succesvol toegevoegd!', 'success')
-                return redirect(url_for('list_criteria'))
-            except sqlite3.IntegrityError as e:
-                flash(f'Fout bij toevoegen: een criterium met deze naam bestaat mogelijk al. {e}', 'danger')
-            except Exception as e:
-                flash(f'Er is een onverwachte fout opgetreden: {e}', 'danger')
+                    cursor = db.cursor()
+                    cursor.execute(
+                        '''INSERT INTO criteria (
+                            name, description, rule_type, application_scope, is_enabled, severity,
+                            error_message, fixed_feedback_text, frequency_unit, max_mentions_per,
+                            expected_value_min, expected_value_max, color
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                        (name, description, rule_type, application_scope, is_enabled, severity,
+                         error_message, fixed_feedback_text, frequency_unit, max_mentions_per,
+                         expected_value_min, expected_value_max, color)
+                    )
+                    criterion_id = cursor.lastrowid
+
+                    # Voeg mapping toe
+                    db.execute(
+                        'INSERT INTO document_type_criteria_mappings (document_type_id, criteria_id) VALUES (?, ?)',
+                        (doc_type_id, criterion_id)
+                    )
+                    db.commit()
+                    flash('Criterium succesvol toegevoegd!', 'success')
+                    return redirect(url_for('list_criteria'))
+                except sqlite3.IntegrityError as e:
+                    flash(f'Fout bij toevoegen: {e}', 'danger')
+                except Exception as e:
+                    flash(f'Er is een onverwachte fout opgetreden: {e}', 'danger')
             
     return render_template('add_criterion.html', 
                            document_types=document_types, 

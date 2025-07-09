@@ -172,6 +172,10 @@ def recognize_and_enrich_sections(
             # Het 'level' van de gevonden sectie kan afwijken van het verwachte level uit de DB
             # We zetten hier het 'gevonden_level' in voor debugging/weergave
             section_info['found_level'] = boundary_data['heading_level'] 
+            
+            # Voeg karakterposities toe voor Word comments functionaliteit
+            section_info['start_char'] = boundary_data['start_char']
+            section_info['end_char'] = boundary_data['end_char']
 
             # Vul de subkopjes binnen deze sectie (kopjes met een hoger niveau dan de sectie's hoofd-heading)
             for heading in sorted_headings:

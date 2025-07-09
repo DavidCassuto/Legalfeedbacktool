@@ -15,7 +15,11 @@ from docx.oxml import parse_xml
 import logging
 
 # Import nieuwe Word comments module
-from word_comments import WordCommentManager
+try:
+    from word_comments import WordCommentManager
+except ImportError:
+    # Fallback voor als de module niet gevonden wordt
+    from .word_comments import WordCommentManager
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +46,20 @@ class WordFeedbackExporter:
         """
         try:
             if use_real_comments:
-                # Gebruik nieuwe echte Word comments
-                logger.info("Gebruik echte Word comments...")
+                # Gebruik nieuwe sectie-specifieke Word comments
+                logger.info("Gebruik sectie-specifieke Word comments...")
                 comment_manager = WordCommentManager()
-                return comment_manager.add_real_comments_to_document(
-                    original_file_path, feedback_data, output_file_path
+                
+                # Haal sectie data op uit feedback_data
+                sections_data = feedback_data.get('sections', [])
+                
+                # Converteer feedback naar het juiste formaat voor sectie-specifieke comments
+                formatted_feedback = {
+                    'feedback': feedback_data.get('feedback_items', [])
+                }
+                
+                return comment_manager.add_section_specific_comments(
+                    original_file_path, formatted_feedback, sections_data, output_file_path
                 )
             else:
                 # Gebruik oude tekst-based aanpak

@@ -238,6 +238,7 @@ def check_textual_criterion(criterion: dict, section: dict):
                 'color': criterion.get('color', '#FFD700')
             }
         else:
+            # GEEN persoonlijk taalgebruik gevonden = OK status
             feedback = {
                 'criteria_id': criterion['id'],
                 'criteria_name': criterion['name'],

@@ -1,248 +1,219 @@
 """
-Word Comments Module - Echte Word comments implementatie
-Gebruikt XML manipulatie om echte Word comments toe te voegen.
+Word Comments Module - Geavanceerde Word comments implementatie
+Gebruikt python-docx en XML manipulatie voor betrouwbare comment toevoeging bij specifieke secties.
 """
 
 import os
-import zipfile
-import xml.etree.ElementTree as ET
+import logging
 from typing import List, Dict, Any, Optional, Tuple
 from docx import Document
 from docx.oxml.shared import OxmlElement, qn
 from docx.oxml.ns import nsdecls
-import logging
+from docx.shared import RGBColor, Pt
+from docx.text.paragraph import Paragraph
+import re
 
 logger = logging.getLogger(__name__)
 
-class WordCommentManager:
-    """Beheert echte Word comments via XML manipulatie."""
+class AdvancedWordCommentManager:
+    """Beheert geavanceerde Word comments via python-docx en XML manipulatie."""
     
     def __init__(self):
         """Initialiseer de comment manager."""
         self.comment_id_counter = 1
-        self.comment_ref_counter = 1
         
-        # Word XML namespaces
-        self.namespaces = {
-            'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
-            'w15': 'http://schemas.microsoft.com/office/word/2012/wordml'
-        }
-    
-    def add_real_comments_to_document(self, doc_path: str, feedback_data: Dict[str, Any], 
-                                    output_path: Optional[str] = None) -> str:
+    def add_section_specific_comments(self, doc_path: str, feedback_data: Dict[str, Any], 
+                                    sections_data: List[Dict], output_path: Optional[str] = None) -> str:
         """
-        Voeg echte Word comments toe aan een document.
+        Voeg Word comments toe aan specifieke secties in het document.
         
         Args:
             doc_path: Pad naar het originele Word document
-            feedback_data: Dictionary met feedback data
-            output_path: Pad voor het output document
+            feedback_data: Dictionary met feedback per sectie
+            sections_data: Lijst van herkende secties met karakterposities
+            output_path: Pad voor het geëxporteerde document
             
         Returns:
-            Pad naar het document met comments
+            Pad naar het geëxporteerde document met comments
         """
+        if output_path is None:
+            base_name = os.path.splitext(doc_path)[0]
+            output_path = f"{base_name}_met_sectie_comments.docx"
+            
+        logger.info("Start toevoegen sectie-specifieke Word comments...")
+        
         try:
-            logger.info("Start toevoegen echte Word comments...")
-            
             # Kopieer het originele document
-            if not output_path:
-                base_name = os.path.splitext(doc_path)[0]
-                output_path = f"{base_name}_met_comments.docx"
+            doc = Document(doc_path)
             
-            # Kopieer document
-            import shutil
-            shutil.copy2(doc_path, output_path)
+            # Groepeer feedback per sectie
+            feedback_per_section = self._group_feedback_by_section(feedback_data, sections_data)
             
-            # Open als ZIP (Word documents zijn ZIP files)
-            with zipfile.ZipFile(output_path, 'a') as doc_zip:
-                # Lees bestaande document XML
-                document_xml = doc_zip.read('word/document.xml')
-                comments_xml = self._get_or_create_comments_xml(doc_zip)
-                
-                # Parse XML
-                doc_root = ET.fromstring(document_xml)
-                comments_root = ET.fromstring(comments_xml)
-                
-                # Voeg comment namespace toe aan document
-                self._add_comment_namespace(doc_root)
-                
-                # Voeg comments toe
-                feedback_items = feedback_data.get('feedback_items', [])
-                for item in feedback_items:
-                    self._add_single_comment(doc_root, comments_root, item)
-                
-                # Schrijf aangepaste XML terug
-                doc_zip.writestr('word/document.xml', ET.tostring(doc_root, encoding='unicode'))
-                doc_zip.writestr('word/comments.xml', ET.tostring(comments_root, encoding='unicode'))
-                
-                # Update relaties
-                self._update_relationships(doc_zip)
+            # Voeg comments toe voor elke sectie
+            for section_info in sections_data:
+                section_id = section_info.get('db_id')
+                if section_id and section_id in feedback_per_section:
+                    section_feedback = feedback_per_section[section_id]
+                    self._add_comments_to_section(doc, section_info, section_feedback)
             
-            logger.info(f"Echte Word comments toegevoegd: {output_path}")
+            # Sla het document op
+            doc.save(output_path)
+            logger.info(f"Sectie-specifieke Word comments toegevoegd: {output_path}")
             return output_path
             
         except Exception as e:
-            logger.error(f"Fout bij toevoegen echte comments: {e}")
+            logger.error(f"Fout bij toevoegen sectie-specifieke comments: {e}")
             raise
     
-    def _get_or_create_comments_xml(self, doc_zip: zipfile.ZipFile) -> str:
-        """Haal bestaande comments.xml op of maak nieuwe aan."""
-        try:
-            return doc_zip.read('word/comments.xml').decode('utf-8')
-        except KeyError:
-            # Maak nieuwe comments.xml
-            comments_xml = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-</w:comments>'''
-            return comments_xml
+    def _group_feedback_by_section(self, feedback_data: Dict[str, Any], 
+                                  sections_data: List[Dict]) -> Dict[int, List[Dict]]:
+        """Groepeer feedback per sectie ID."""
+        feedback_per_section = {}
+        
+        for feedback_item in feedback_data.get('feedback', []):
+            section_id = feedback_item.get('section_id')
+            if section_id:
+                if section_id not in feedback_per_section:
+                    feedback_per_section[section_id] = []
+                feedback_per_section[section_id].append(feedback_item)
+        
+        return feedback_per_section
     
-    def _add_comment_namespace(self, doc_root: ET.Element):
-        """Voeg comment namespace toe aan document root."""
-        # Voeg w15 namespace toe voor comments
-        if 'w15' not in doc_root.attrib:
-            doc_root.attrib['xmlns:w15'] = 'http://schemas.microsoft.com/office/word/2012/wordml'
+    def _add_comments_to_section(self, doc: Document, section_info: Dict, 
+                                section_feedback: List[Dict]) -> None:
+        """Voeg comments toe aan een specifieke sectie."""
+        section_name = section_info.get('name', 'Onbekende sectie')
+        logger.info(f"Voeg comments toe aan sectie: {section_name}")
+        
+        # Zoek de paragraaf die het dichtst bij het begin van de sectie ligt
+        target_paragraph = self._find_section_start_paragraph(doc, section_info)
+        
+        if target_paragraph is None:
+            logger.warning(f"Kon geen geschikte paragraaf vinden voor sectie: {section_name}")
+            return
+        
+        # Voeg een comment toe met alle feedback voor deze sectie
+        comment_text = self._format_section_feedback(section_name, section_feedback)
+        self._add_comment_after_paragraph(doc, target_paragraph, comment_text)
     
-    def _add_single_comment(self, doc_root: ET.Element, comments_root: ET.Element, 
-                          feedback_item: Dict[str, Any]):
-        """Voeg een enkele comment toe."""
+    def _find_section_start_paragraph(self, doc: Document, section_info: Dict) -> Optional[Paragraph]:
+        """Vind de paragraaf die het dichtst bij het begin van de sectie ligt."""
+        section_start_char = section_info.get('start_char', 0)
+        section_end_char = section_info.get('end_char', 0)
+        
+        if section_start_char == 0 and section_end_char == 0:
+            # Fallback: zoek naar de sectienaam in paragrafen
+            return self._find_paragraph_by_text(doc, section_info.get('name', ''))
+        
+        # Zoek de paragraaf die het dichtst bij section_start_char ligt
+        current_char_pos = 0
+        closest_paragraph = None
+        min_distance = float('inf')
+        
+        for para in doc.paragraphs:
+            para_text = para.text
+            para_start = current_char_pos
+            para_end = current_char_pos + len(para_text)
+            
+            # Bereken afstand tot sectie begin
+            distance = abs(para_start - section_start_char)
+            if distance < min_distance:
+                min_distance = distance
+                closest_paragraph = para
+            
+            current_char_pos = para_end + 1  # +1 voor newline
+        
+        return closest_paragraph
+    
+    def _find_paragraph_by_text(self, doc: Document, search_text: str) -> Optional[Paragraph]:
+        """Vind een paragraaf die de zoektekst bevat."""
+        search_text_lower = search_text.lower()
+        
+        for para in doc.paragraphs:
+            if search_text_lower in para.text.lower():
+                return para
+        
+        return None
+    
+    def _format_section_feedback(self, section_name: str, feedback_list: List[Dict]) -> str:
+        """Format feedback voor een sectie als comment tekst."""
+        if not feedback_list:
+            return f"Geen feedback voor sectie: {section_name}"
+        
+        comment_lines = [f"Feedback voor sectie: {section_name}"]
+        comment_lines.append("=" * 50)
+        
+        for i, feedback in enumerate(feedback_list, 1):
+            criteria_name = feedback.get('criteria_name', 'Onbekend criterium')
+            status = feedback.get('status', 'UNKNOWN')
+            message = feedback.get('message', 'Geen bericht')
+            
+            comment_lines.append(f"{i}. {criteria_name} ({status})")
+            comment_lines.append(f"   {message}")
+            comment_lines.append("")
+        
+        return "\n".join(comment_lines)
+    
+    def _add_comment_after_paragraph(self, doc: Document, target_paragraph: Paragraph, 
+                                   comment_text: str) -> None:
+        """Voeg een comment toe na een specifieke paragraaf."""
         try:
-            # Genereer unieke IDs
-            comment_id = str(self.comment_id_counter)
-            comment_ref_id = str(self.comment_ref_counter)
+            # Maak een nieuwe paragraaf voor de comment
+            new_paragraph = doc.add_paragraph()
             
-            # Maak comment XML
-            comment_element = self._create_comment_element(feedback_item, comment_id)
-            comments_root.append(comment_element)
+            # Format de comment met kleur en stijl
+            self._format_comment_paragraph(new_paragraph, comment_text)
             
-            # Voeg comment referentie toe aan document
-            self._add_comment_reference(doc_root, comment_ref_id)
+            # Verplaats de paragraaf naar de juiste positie via XML manipulatie
+            self._insert_paragraph_after(doc, target_paragraph, new_paragraph)
             
-            # Update counters
-            self.comment_id_counter += 1
-            self.comment_ref_counter += 1
-            
-            logger.info(f"Comment toegevoegd: {feedback_item.get('criterion_name', 'Unknown')}")
+            logger.info(f"Comment toegevoegd na paragraaf: {target_paragraph.text[:50]}...")
             
         except Exception as e:
             logger.error(f"Fout bij toevoegen comment: {e}")
     
-    def _create_comment_element(self, feedback_item: Dict[str, Any], comment_id: str) -> ET.Element:
-        """Maak een comment XML element."""
-        # Haal feedback data op
-        criterion_name = feedback_item.get('criterion_name', 'Onbekend criterium')
-        message = feedback_item.get('message', 'Geen bericht')
-        status = feedback_item.get('status', 'unknown')
-        suggestion = feedback_item.get('suggestion', '')
+    def _format_comment_paragraph(self, paragraph: Paragraph, comment_text: str) -> None:
+        """Format een paragraaf als comment met kleur en stijl."""
+        # Definieer stijlen
+        blue_color = RGBColor(0x00, 0x00, 0xFF)  # Blauw
+        font_size_pt = Pt(10)
         
-        # Maak comment tekst
-        comment_text = f"[{criterion_name}] {message}"
-        if suggestion:
-            comment_text += f"\n\nSuggestie: {suggestion}"
-        
-        # Voeg status icon toe
-        status_icon = self._get_status_icon(status)
-        comment_text = f"{status_icon} {comment_text}"
-        
-        # Escape speciale karakters
-        comment_text = comment_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-        
-        # Maak comment element met correcte namespace
-        comment = ET.Element('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}comment')
-        comment.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id', comment_id)
-        comment.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}author', 'Legal Feedback Tool')
-        comment.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}date', '2024-01-01T00:00:00Z')
-        
-        # Voeg paragraaf toe
-        p = ET.SubElement(comment, '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p')
-        r = ET.SubElement(p, '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r')
-        t = ET.SubElement(r, '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
-        t.text = comment_text
-        
-        return comment
+        # Voeg de comment tekst toe met formatting
+        run = paragraph.add_run(comment_text)
+        run.font.color.rgb = blue_color
+        run.font.bold = True
+        run.font.size = font_size_pt
+        run.font.italic = False
     
-    def _add_comment_reference(self, doc_root: ET.Element, comment_ref_id: str):
-        """Voeg comment referentie toe aan document."""
-        # Zoek eerste paragraaf om comment aan toe te voegen
-        for paragraph in doc_root.findall('.//w:p', self.namespaces):
-            # Voeg comment referentie toe aan eerste run
-            for run in paragraph.findall('.//w:r', self.namespaces):
-                # Maak comment referentie elementen met correcte namespace
-                comment_range_start = ET.Element('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}commentRangeStart')
-                comment_range_start.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id', comment_ref_id)
-                
-                comment_range_end = ET.Element('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}commentRangeEnd')
-                comment_range_end.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id', comment_ref_id)
-                
-                comment_ref_run = ET.Element('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r')
-                comment_ref = ET.SubElement(comment_ref_run, '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}commentReference')
-                comment_ref.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id', comment_ref_id)
-                
-                # Voeg elementen toe aan de run
-                run.append(comment_range_start)
-                run.append(comment_range_end)
-                run.append(comment_ref_run)
-                
-                logger.info(f"Comment referentie toegevoegd met ID: {comment_ref_id}")
-                return  # Stop na eerste comment referentie
-    
-    def _get_status_icon(self, status: str) -> str:
-        """Krijg status icon voor comment."""
-        icons = {
-            'error': '❌',
-            'violation': '❌', 
-            'warning': '⚠️',
-            'ok': '✅',
-            'info': 'ℹ️'
-        }
-        return icons.get(status, 'ℹ️')
-    
-    def _update_relationships(self, doc_zip: zipfile.ZipFile):
-        """Update document relaties om comments te linken."""
+    def _insert_paragraph_after(self, doc: Document, target_paragraph: Paragraph, 
+                              new_paragraph: Paragraph) -> None:
+        """Voeg een paragraaf toe na een andere paragraaf via XML manipulatie."""
         try:
-            # Lees bestaande relaties
-            rels_xml = doc_zip.read('word/_rels/document.xml.rels').decode('utf-8')
-            rels_root = ET.fromstring(rels_xml)
+            # Haal de XML elementen op
+            target_element = target_paragraph._element
+            new_element = new_paragraph._element
             
-            # Check of comments relatie al bestaat
-            comments_rel_exists = False
-            for rel in rels_root.findall('.//Relationship'):
-                if rel.get('Target') == 'comments.xml':
-                    comments_rel_exists = True
-                    break
+            # Haal de parent op (meestal de body)
+            parent = target_element.getparent()
             
-            # Voeg comments relatie toe als deze niet bestaat
-            if not comments_rel_exists:
-                rel_id = f"rId{len(rels_root.findall('.//Relationship')) + 1}"
-                rel_xml = f'<Relationship Id="{rel_id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/>'
-                rel_element = ET.fromstring(rel_xml)
-                rels_root.append(rel_element)
-                
-                # Schrijf aangepaste relaties terug
-                doc_zip.writestr('word/_rels/document.xml.rels', ET.tostring(rels_root, encoding='unicode'))
-                
+            # Vind de index van de target paragraaf
+            index = parent.index(target_element)
+            
+            # Voeg de nieuwe paragraaf toe na de target paragraaf
+            parent.insert(index + 1, new_element)
+            
         except Exception as e:
-            logger.warning(f"Kon relaties niet updaten: {e}")
+            logger.error(f"Fout bij XML manipulatie: {e}")
+            # Fallback: voeg toe aan het einde van het document
+            pass
 
-# Test functie
-def test_word_comments():
-    """Test de Word comments functionaliteit."""
-    manager = WordCommentManager()
+# Backward compatibility
+class WordCommentManager(AdvancedWordCommentManager):
+    """Backward compatibility wrapper."""
     
-    # Test feedback data
-    test_feedback = {
-        'feedback_items': [
-            {
-                'criterion_name': 'Test Criterium',
-                'message': 'Dit is een test comment',
-                'status': 'warning',
-                'suggestion': 'Verbeter dit gedeelte'
-            }
-        ]
-    }
-    
-    # Test met een bestaand document
-    # manager.add_real_comments_to_document('test.docx', test_feedback)
-    print("Word Comments module geladen en klaar voor gebruik!")
-
-if __name__ == "__main__":
-    test_word_comments() 
+    def add_real_comments_to_document(self, doc_path: str, feedback_data: Dict[str, Any], 
+                                    output_path: Optional[str] = None) -> str:
+        """Backward compatibility method."""
+        # Voor backward compatibility, gebruik een eenvoudige sectie mapping
+        sections_data = [{'db_id': 1, 'name': 'Document', 'start_char': 0, 'end_char': 0}]
+        return self.add_section_specific_comments(doc_path, feedback_data, sections_data, output_path) 

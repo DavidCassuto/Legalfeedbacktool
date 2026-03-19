@@ -441,6 +441,12 @@ AI-STIJLDETECTIE — let naast de bovenstaande criteria ook op deze kenmerken di
 • Verwijzingen naar bronnen die niet concreet worden aangehaald of toegepast
 • Ontbreken van fouten, inconsistenties of persoonlijk perspectief — de tekst klinkt te perfect
 • Gebrek aan eigen juridische of vakinhoudelijke redenering: begrippen worden gedefinieerd maar niet toegepast
+• Hyperbolisch en wervend taalgebruik: onnodig gebruik van versterkende woorden als "cruciaal", "essentieel",
+  "fundamenteel", "baanbrekend", "ongekend", "van het grootste belang" — zonder dat de argumentatie of
+  bronvermelding dat rechtvaardigt; de tekst klinkt als marketingcopy of websitetekst, niet als onderbouwd onderzoek
+• Ontbreken van academische voorzichtigheid: geen gebruik van hedging zoals "lijkt erop dat", "suggereert",
+  "mogelijk", "in bepaalde gevallen" — stellingen worden als absolute waarheid gepresenteerd zonder voorbehoud
+• Het belang of de ernst van het onderwerp wordt groter voorgesteld dan het geleverde bewijs rechtvaardigt
 """.strip()
 
 _LLM_RESPONSE_SCHEMA = """

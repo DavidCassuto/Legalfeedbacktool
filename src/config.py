@@ -17,7 +17,8 @@ class Config:
     UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'instance/uploads')
     
     # AI Feedback configuratie
-    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+    GEMINI_API_KEY    = os.getenv('GEMINI_API_KEY')
+    ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')  # voor llm_review (Claude)
     
     # Export configuratie
     EXPORT_FOLDER = os.path.join(UPLOAD_FOLDER, 'exports')
@@ -38,8 +39,10 @@ class Config:
         warnings = []
         
         if not cls.GEMINI_API_KEY:
-            warnings.append("GEMINI_API_KEY niet ingesteld. AI feedback zal niet beschikbaar zijn.")
-        
+            warnings.append("GEMINI_API_KEY niet ingesteld. Gemini AI feedback zal niet beschikbaar zijn.")
+        if not cls.ANTHROPIC_API_KEY:
+            warnings.append("ANTHROPIC_API_KEY niet ingesteld. LLM-review criteria (Claude) zullen niet werken.")
+
         return warnings
 
 # Maak export directory aan

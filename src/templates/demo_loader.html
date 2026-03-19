@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocuCheck Loading Spinner Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .demo-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #2d3436;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: #636e72;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .demo-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-weight: 600;
+            color: #2d3436;
+            font-size: 14px;
+        }
+
+        input[type="file"],
+        select {
+            padding: 12px;
+            border: 2px solid #dfe6e9;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+            font-family: inherit;
+        }
+
+        input[type="file"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #4D908E;
+        }
+
+        button {
+            background: #4D908E;
+            color: white;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        button:hover:not(:disabled) {
+            background: #3d6f6d;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(77, 144, 142, 0.3);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* Loading Spinner Animation */
+        @keyframes docucheck-spin {
+            0% {
+                transform: rotate(0deg) scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: rotate(180deg) scale(1.1);
+            }
+            100% {
+                transform: rotate(360deg) scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes docucheck-pulse {
+            0%, 100% {
+                box-shadow: 0 0 20px rgba(77, 144, 142, 0.3),
+                            0 0 40px rgba(77, 144, 142, 0.1);
+            }
+            50% {
+                box-shadow: 0 0 40px rgba(77, 144, 142, 0.6),
+                            0 0 80px rgba(77, 144, 142, 0.3);
+            }
+        }
+
+        #loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(2px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        #loading-overlay.active {
+            display: flex;
+        }
+
+        .loader-container {
+            text-align: center;
+        }
+
+        .spinner {
+            width: 100px;
+            height: 100px;
+            border: 5px solid rgba(77, 144, 142, 0.2);
+            border-top: 5px solid #4D908E;
+            border-right: 5px solid #52796F;
+            border-radius: 50%;
+            animation: docucheck-spin 1.5s linear infinite;
+            margin: 0 auto 30px;
+            box-shadow: 0 0 30px rgba(77, 144, 142, 0.5);
+        }
+
+        .loader-container.pulse-glow .spinner {
+            animation: docucheck-spin 1.5s linear infinite,
+                       docucheck-pulse 2s ease-in-out infinite;
+        }
+
+        .loading-text {
+            color: #4D908E;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            letter-spacing: 1px;
+        }
+
+        .loading-subtext {
+            color: rgba(77, 144, 142, 0.7);
+            font-size: 14px;
+            margin-top: 15px;
+        }
+
+        .dot-animation {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #4D908E;
+            border-radius: 50%;
+            margin-left: 4px;
+            animation: bounce 1.4s infinite;
+        }
+
+        .dot-animation:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+
+        .dot-animation:nth-child(2) {
+            animation-delay: -0.16s;
+        }
+
+        @keyframes bounce {
+            0%, 80%, 100% {
+                transform: scale(0);
+                opacity: 0.5;
+            }
+            40% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .info-box {
+            background: #ecf0f1;
+            border-left: 4px solid #4D908E;
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #2d3436;
+            margin-top: 20px;
+        }
+
+        .info-box strong {
+            color: #4D908E;
+        }
+    </style>
+</head>
+<body>
+    {# Loading Overlay #}
+    <div id="loading-overlay">
+        <div class="loader-container pulse-glow">
+            <div class="spinner"></div>
+            <div class="loading-text">DocuCheck analyseert jouw document</div>
+            <div class="loading-subtext">
+                Even geduld<span class="dot-animation"></span><span class="dot-animation"></span><span class="dot-animation"></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="demo-container">
+        <h1>🎬 DocuCheck Loading Spinner Demo</h1>
+        <p class="subtitle">Klik op "Demo Starten" om de laadanimatie in actie te zien</p>
+
+        <div class="demo-form">
+            <div class="form-group">
+                <label for="demo-file">Selecteer een bestand (demo):</label>
+                <input type="file" id="demo-file" accept=".docx" />
+            </div>
+
+            <div class="form-group">
+                <label for="demo-type">Documenttype:</label>
+                <select id="demo-type">
+                    <option value="">-- Selecteer een documenttype --</option>
+                    <option value="1">Juridisch betoog</option>
+                    <option value="2">Onderzoeksvoorstel</option>
+                    <option value="3">Concluderend stuk</option>
+                </select>
+            </div>
+
+            <button type="button" id="demo-btn" onclick="startDemo()">Demo Starten (3 seconden)</button>
+        </div>
+
+        <div class="info-box">
+            <strong>ℹ️ Over deze demo:</strong><br>
+            Deze pagina demonstreert de nieuwe laadanimatie die in DocuCheck is geïmplementeerd.
+            Wanneer je een document uploadt, zal deze spinning animation verschijnen om aan te geven
+            dat DocuCheck jouw document aan het analyseren is.
+        </div>
+    </div>
+
+    <script>
+        function startDemo() {
+            const overlay = document.getElementById('loading-overlay');
+            const btn = document.getElementById('demo-btn');
+
+            // Show the loader
+            overlay.classList.add('active');
+            btn.disabled = true;
+
+            // Simulate document processing for 3 seconds
+            setTimeout(() => {
+                overlay.classList.remove('active');
+                btn.disabled = false;
+                alert('✅ Demo voltooid! De loader zou verwijderd zijn na analyse.');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

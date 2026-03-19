@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Gebruikers — DocuCheck{% endblock %}
+{% block content %}
+<div class="header">
+    <h1>👤 Gebruikersbeheer</h1>
+    <p>Beheer beheerders en studenten die toegang hebben tot DocuCheck.</p>
+</div>
+
+<div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <h2 style="font-size:1.3em; color:#2B2D42;">Alle gebruikers</h2>
+        <a href="{{ url_for('add_user') }}" class="btn">+ Nieuwe gebruiker</a>
+    </div>
+
+    {% if users %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Gebruikersnaam</th>
+                <th>Volledige naam</th>
+                <th>Rol</th>
+                <th>Organisatie</th>
+                <th>Aangemaakt</th>
+                <th>Acties</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td><strong>{{ user.username }}</strong>
+                    {% if user.id == session_user_id %}
+                        <span class="badge" style="background:#4D908E;color:white;margin-left:6px;">jij</span>
+                    {% endif %}
+                </td>
+                <td>{{ user.full_name or '—' }}</td>
+                <td>
+                    {% if user.role == 'admin' %}
+                        <span class="badge badge-success">🔑 Beheerder</span>
+                    {% else %}
+                        <span class="badge badge-warning">👤 Student</span>
+                    {% endif %}
+                </td>
+                <td>{{ user.org_name or '—' }}</td>
+                <td style="font-size:0.85em; color:#6C757D;">{{ user.created_at[:10] if user.created_at else '—' }}</td>
+                <td>
+                    <a href="{{ url_for('edit_user', id=user.id) }}" class="btn btn-secondary" style="padding:6px 12px;font-size:0.85em;">Bewerk</a>
+                    {% if user.id != session_user_id %}
+                    <form method="POST" action="{{ url_for('delete_user', id=user.id) }}"
+                          style="display:inline;"
+                          onsubmit="return confirm('Gebruiker \'{{ user.username }}\' verwijderen?')">
+                        <button type="submit" class="btn btn-danger" style="padding:6px 12px;font-size:0.85em;">Verwijder</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <h3>Geen gebruikers gevonden</h3>
+        <p>Voeg een gebruiker toe om te beginnen.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Gebruiker toevoegen / bewerken formulier (inline modal) -->
+{% if show_form %}
+<div class="card" style="border: 2px solid #4D908E;">
+    <h2 style="font-size:1.2em; margin-bottom:20px; color:#2B2D42;">
+        {% if edit_user %}✏️ Gebruiker bewerken{% else %}➕ Nieuwe gebruiker{% endif %}
+    </h2>
+    <form method="POST" action="{{ url_for('edit_user', id=edit_user.id) if edit_user else url_for('add_user') }}">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div class="form-group">
+                <label>Gebruikersnaam *</label>
+                <input type="text" name="username" required
+                       value="{{ edit_user.username if edit_user else '' }}"
+                       placeholder="bijv. student_001">
+            </div>
+            <div class="form-group">
+                <label>Volledige naam</label>
+                <input type="text" name="full_name"
+                       value="{{ edit_user.full_name if edit_user else '' }}"
+                       placeholder="bijv. Jan Jansen">
+            </div>
+            <div class="form-group">
+                <label>Wachtwoord {% if not edit_user %}*{% else %}(leeg = ongewijzigd){% endif %}</label>
+                <input type="password" name="password"
+                       {% if not edit_user %}required{% endif %}
+                       placeholder="{% if edit_user %}Leeg laten om niet te wijzigen{% else %}Nieuw wachtwoord{% endif %}">
+            </div>
+            <div class="form-group">
+                <label>Rol *</label>
+                <select name="role">
+                    <option value="consumer" {% if edit_user and edit_user.role == 'consumer' %}selected{% endif %}>👤 Student / Consument</option>
+                    <option value="admin" {% if edit_user and edit_user.role == 'admin' %}selected{% endif %}>🔑 Beheerder</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Organisatie</label>
+                <select name="organization_id">
+                    <option value="">— Geen —</option>
+                    {% for org in organizations %}
+                    <option value="{{ org.id }}" {% if edit_user and edit_user.organization_id == org.id %}selected{% endif %}>{{ org.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div style="margin-top:10px;">
+            <button type="submit" class="btn">💾 Opslaan</button>
+            <a href="{{ url_for('list_users') }}" class="btn btn-secondary">Annuleren</a>
+        </div>
+    </form>
+</div>
+{% endif %}
+{% endblock %}

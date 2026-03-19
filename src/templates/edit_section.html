@@ -28,6 +28,13 @@
     </style>
 </head>
 <body class="p-6">
+    <nav class="max-w-[800px] mx-auto mb-4 text-sm text-gray-500">
+        <a href="{{ url_for('index') }}" class="text-blue-600 hover:underline">Home</a>
+        <span class="mx-1">›</span>
+        <a href="{{ url_for('list_sections') }}" class="text-blue-600 hover:underline">Secties</a>
+        <span class="mx-1">›</span>
+        <span class="text-gray-700">{{ section.name }}</span>
+    </nav>
     <div class="container mx-auto bg-white p-8 rounded-lg shadow-lg">
         <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b-2 pb-4">Sectie Bewerken</h1>
 
@@ -67,6 +74,17 @@
                         <p class="text-xs text-gray-500 mt-1">Unieke code (kleine letters, underscores)</p>
                     </div>
                 </div>
+
+                <div class="mt-4">
+                    <label for="alternative_names" class="block text-sm font-medium text-gray-700 mb-2">
+                        Alternatieve Namen
+                    </label>
+                    <input type="text" id="alternative_names" name="alternative_names"
+                           value="{{ form_data.get('alternative_names', alt_names_display) }}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                           placeholder="Bijv. Inleiding, Intro, Introductie">
+                    <p class="text-xs text-gray-500 mt-1">Komma-gescheiden alternatieve namen waarmee deze sectie ook herkend wordt</p>
+                </div>
             </div>
 
             <!-- Document Volgorde -->
@@ -82,7 +100,7 @@
                                value="{{ form_data.get('order_index', section.order_index) }}"
                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                placeholder="Bijv. 10, 20, 30">
-                        <p class="text-xs text-gray-500 mt-1">Hoger nummer = later in document (gebruik stappen van 10)</p>
+                        <p id="order_hint" class="text-xs text-gray-500 mt-1">H1 – gebruik veelvouden van 10 (10, 20, 30 …)</p>
                     </div>
 
                     <div>
@@ -140,5 +158,27 @@
             </div>
         </form>
     </div>
+    <script>
+        const orderInput = document.getElementById('order_index');
+        const levelSelect = document.getElementById('level');
+        const orderHint  = document.getElementById('order_hint');
+
+        const config = {
+            '1': { step: 10, min: 10, placeholder: 'Bijv. 10, 20, 30', hint: 'H1 – gebruik veelvouden van 10 (10, 20, 30 …)' },
+            '2': { step: 1,  min: 1,  placeholder: 'Bijv. 11, 12, 21', hint: 'H2 – elk geheel getal is toegestaan (bijv. 11 voor na hoofdstuk 10)' },
+            '3': { step: 1,  min: 1,  placeholder: 'Bijv. 111, 112',   hint: 'H3 – elk geheel getal is toegestaan' },
+        };
+
+        function applyLevelConfig() {
+            const cfg = config[levelSelect.value] || config['1'];
+            orderInput.step        = cfg.step;
+            orderInput.min         = cfg.min;
+            orderInput.placeholder = cfg.placeholder;
+            orderHint.textContent  = cfg.hint;
+        }
+
+        levelSelect.addEventListener('change', applyLevelConfig);
+        applyLevelConfig(); // zet direct de juiste waarden op basis van de huidige sectie
+    </script>
 </body>
-</html> 
+</html>

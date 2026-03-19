@@ -1,6 +1,39 @@
 import re
 import json # Nodig om alternative_names te parsen
 
+# Nederlandse stopwoorden die uitgesloten worden bij fuzzy matching
+_NL_STOPWORDS = {
+    'de', 'het', 'een', 'en', 'in', 'op', 'te', 'van', 'voor', 'met', 'zijn', 'er',
+    'dat', 'die', 'dit', 'aan', 'door', 'over', 'bij', 'als', 'om', 'maar', 'ook',
+    'tot', 'uit', 'naar', 'we', 'je', 'ze', 'hij', 'zij', 'ik', 'dan', 'nog', 'wel',
+    'niet', 'geen', 'kan', 'wordt', 'werd', 'heeft', 'had', 'was', 'ben', 'der', 'des',
+}
+
+def _meaningful_words(text: str) -> set:
+    """Haal betekenisvolle woorden op (min. 3 tekens, geen stopwoorden)."""
+    words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
+    return {w for w in words if w not in _NL_STOPWORDS}
+
+def _words_overlap(set_a: set, set_b: set) -> int:
+    """Tel overlappende woorden, inclusief woordvarianten via prefix-matching (≥5 tekens).
+    Behandelt Nederlandse woordbuiging zoals 'juridisch'/'juridische'."""
+    exact = set_a & set_b
+    # Voeg prefix-matches toe voor woorden die nog niet exact matchen
+    unmatched_a = set_a - exact
+    unmatched_b = set_b - exact
+    prefix_matches = 0
+    for wa in unmatched_a:
+        if len(wa) < 5:
+            continue
+        for wb in unmatched_b:
+            if len(wb) < 5:
+                continue
+            prefix_len = min(len(wa), len(wb))
+            if wa[:prefix_len] == wb[:prefix_len] or wb.startswith(wa[:5]) or wa.startswith(wb[:5]):
+                prefix_matches += 1
+                break
+    return len(exact) + prefix_matches
+
 def recognize_and_enrich_sections(
     doc_content: str,
     paragraphs: list[str],
@@ -38,9 +71,21 @@ def recognize_and_enrich_sections(
         - 'parent_id': Het ID van de parent sectie (uit DB)
     """
     recognized_sections_list = []
-    
-    # Maak een dictionary van expected_sections_metadata voor snelle lookup op identifier
-    expected_sections_dict = {s['identifier']: dict(s) for s in expected_sections_metadata}
+
+    # Maak een dictionary van expected_sections_metadata voor snelle lookup op identifier.
+    # Zorg ook dat alternative_names altijd een Python-lijst is (de DB slaat het op als JSON-string).
+    expected_sections_dict = {}
+    for s in expected_sections_metadata:
+        s_dict = dict(s)
+        alt = s_dict.get('alternative_names', None)
+        if isinstance(alt, str):
+            try:
+                s_dict['alternative_names'] = json.loads(alt)
+            except (json.JSONDecodeError, ValueError):
+                s_dict['alternative_names'] = []
+        elif not isinstance(alt, list):
+            s_dict['alternative_names'] = []
+        expected_sections_dict[s_dict['identifier']] = s_dict
 
     # Sorteer headings op start_char voor sequentiële verwerking
     sorted_headings = sorted(all_headings, key=lambda x: x['start_char'])
@@ -85,6 +130,7 @@ def recognize_and_enrich_sections(
         
         print(f"  Gereinigde koptekst: '{cleaned_heading_text}'")
 
+        # VERBETERDE MATCHING LOGICA:
         # Prioriteit 1: Exacte match van de gereinigde koptekst met identifier of naam
         for es_id, es_data in expected_sections_dict.items():
             expected_name_lower = es_data['name'].lower()
@@ -103,6 +149,9 @@ def recognize_and_enrich_sections(
             for es_id, es_data in expected_sections_dict.items():
                 if es_data['alternative_names']:
                     for alias in es_data['alternative_names']:
+                        # Sla lege of alleen-witruimte aliassen over om vals-positieve matches te voorkomen
+                        if not alias.strip():
+                            continue
                         # AANGEPAST: re.search ipv re.fullmatch om deelmatches toe te staan
                         # En zorg ervoor dat de alias als heel woord wordt gematcht
                         if re.search(r'\b' + re.escape(alias.lower()) + r'\b', cleaned_heading_text):
@@ -111,6 +160,42 @@ def recognize_and_enrich_sections(
                             break
                 if matched_identifier:
                     break # Als een match gevonden is, stop met zoeken voor deze heading
+        
+        # NIEUW: Prioriteit 3: Voor Heading niveau 1, probeer algemene hoofdstuk matching
+        if not matched_identifier and heading_level_parsed == 1:
+            # Voor niveau 1 headings, probeer te matchen met "Hoofdstuk Algemeen" of andere algemene secties
+            for es_id, es_data in expected_sections_dict.items():
+                if es_data['identifier'] == 'hoofdstuk_algemeen' or 'hoofdstuk' in es_data['alternative_names']:
+                    # Als het een niveau 1 heading is en we hebben geen specifieke match, 
+                    # koppel het aan de algemene hoofdstuk sectie
+                    matched_identifier = es_id
+                    print(f"  --> MATCH (niveau 1 hoofdstuk) op '{es_data['name']}' voor algemene hoofdstukkoppen.")
+                    break
+        
+        # Prioriteit 4: Fuzzy matching op basis van woord-overlap (verbeterd)
+        # Eisen: koptekst ≥ 5 tekens, minstens 60% overlap van betekenisvolle woorden.
+        # Kies de beste match (hoogste overlap ratio) om vals-positieven te vermijden.
+        if not matched_identifier and len(cleaned_heading_text) >= 5:
+            heading_words = _meaningful_words(cleaned_heading_text)
+            if heading_words:
+                best_ratio = 0.0
+                best_id = None
+                best_name = None
+                for es_id, es_data in expected_sections_dict.items():
+                    expected_words = _meaningful_words(es_data['name'])
+                    if not expected_words:
+                        continue
+                    overlap_count = _words_overlap(heading_words, expected_words)
+                    smaller_set = min(len(heading_words), len(expected_words))
+                    if smaller_set > 0:
+                        ratio = overlap_count / smaller_set
+                        if ratio >= 0.6 and ratio > best_ratio:
+                            best_ratio = ratio
+                            best_id = es_id
+                            best_name = es_data['name']
+                if best_id:
+                    matched_identifier = best_id
+                    print(f"  --> FUZZY MATCH (woord-overlap {best_ratio:.0%}) op '{best_name}'.")
         
         if matched_identifier:
             start_char = heading['start_char']
@@ -126,13 +211,17 @@ def recognize_and_enrich_sections(
                     end_char = next_heading['start_char']
                     break
             
-            found_sections_boundaries[matched_identifier] = {
-                'start_char': start_char,
-                'end_char': end_char,
-                'heading_level': heading_level_parsed, # Gebruik het geparsede niveau hier
-                'primary_heading_text': heading['text'] # Hoofd-heading van deze sectie
-            }
-            print(f"  Sectie '{expected_sections_dict[matched_identifier]['name']}' gedefinieerd van char {start_char} tot {end_char} (geparsed level: {heading_level_parsed}).")
+            if matched_identifier not in found_sections_boundaries:
+                # Sla alleen de eerste match op; latere matches voor dezelfde sectie worden genegeerd
+                found_sections_boundaries[matched_identifier] = {
+                    'start_char': start_char,
+                    'end_char': end_char,
+                    'heading_level': heading_level_parsed, # Gebruik het geparsede niveau hier
+                    'primary_heading_text': heading['text'] # Hoofd-heading van deze sectie
+                }
+                print(f"  Sectie '{expected_sections_dict[matched_identifier]['name']}' gedefinieerd van char {start_char} tot {end_char} (geparsed level: {heading_level_parsed}).")
+            else:
+                print(f"  Sectie '{expected_sections_dict[matched_identifier]['name']}' al eerder gevonden; huidige koptekst wordt genegeerd.")
         else:
             print(f"  GEEN SECTIE GEVONDEN voor kopje: '{heading['text']}' (geparsed level: {heading_level_parsed})")
 
@@ -171,8 +260,12 @@ def recognize_and_enrich_sections(
             section_info['word_count'] = len(re.findall(r'\b\w+\b', section_content))
             # Het 'level' van de gevonden sectie kan afwijken van het verwachte level uit de DB
             # We zetten hier het 'gevonden_level' in voor debugging/weergave
-            section_info['found_level'] = boundary_data['heading_level'] 
-            
+            section_info['found_level'] = boundary_data['heading_level']
+            # Sla de originele heading-tekst op zodat inline_word_comments.py
+            # de juiste paragraaf kan vinden, ook als sectienaam ≠ heading-tekst
+            # (bijv. alias/fuzzy-match: 'Doelstelling' → '1.4 Doel van het onderzoek')
+            section_info['heading_text'] = boundary_data['primary_heading_text']
+
             # Voeg karakterposities toe voor Word comments functionaliteit
             section_info['start_char'] = boundary_data['start_char']
             section_info['end_char'] = boundary_data['end_char']

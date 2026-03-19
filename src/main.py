@@ -1,10 +1,19 @@
+# C:\ProjectFT\src\main.py
+
 import os
+import re
 import sqlite3
 import json
-from datetime import datetime, timezone 
+import time
+import logging
+from datetime import datetime, timezone
 from werkzeug.utils import secure_filename
 from flask import Flask, render_template, request, redirect, url_for, flash, g, current_app, abort, session
-import traceback 
+import traceback
+
+# Debug logging voor inline comments module
+logging.basicConfig(level=logging.DEBUG)
+logging.getLogger('analysis.inline_word_comments').setLevel(logging.DEBUG)
 
 # Importeer functies uit je eigen modules
 # AANGEPAST: Importeer db_utils direct vanuit src/
@@ -12,12 +21,26 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-import db_utils 
+import db_utils
 from analysis import document_parsing
 from analysis import section_recognition
 from analysis import criterion_checking
 from ai_feedback import AIFeedbackGenerator
 from word_export import WordFeedbackExporter
+from analysis.inline_word_comments import add_inline_comments
+from werkzeug.security import generate_password_hash, check_password_hash
+from auth import login_required, admin_required, current_user_id, is_admin
+
+# Importeer database optimalisaties
+from database_optimizations import (
+    initialize_sqlite_optimizer, 
+    get_optimized_db, 
+    get_section_content_cached,
+    save_section_content_optimized,
+    batch_save_section_content,
+    performance_monitor,
+    optimize_database_for_multiple_users
+)
 
 # ================================================================
 # Flask App Configuratie
@@ -40,14 +63,18 @@ app.config.from_mapping(
     UPLOAD_FOLDER=UPLOAD_FOLDER
 )
 
-# Functie om database connectie te krijgen
+# Initialiseer database optimalisaties bij startup
+print("[INIT] Initialiseren van database optimalisaties...")
+initialize_sqlite_optimizer(DATABASE)
+optimize_database_for_multiple_users()
+
+# Functie om database connectie te krijgen (geoptimaliseerd)
 def get_db():
     if 'db' not in g:
-        g.db = sqlite3.connect(
-            current_app.config['DATABASE'],
-            detect_types=sqlite3.PARSE_DECLTYPES
-        )
-        g.db.row_factory = sqlite3.Row # Zodat je kolommen via naam kunt benaderen (als een dict)
+        start_time = time.time()
+        g.db = get_optimized_db()
+        duration = time.time() - start_time
+        performance_monitor.record_query_time('connection', duration)
         
         # Check of database al bestaat door te kijken of er secties zijn
         cursor = g.db.cursor()
@@ -61,11 +88,11 @@ def get_db():
             cursor.execute("SELECT COUNT(*) FROM sections")
             section_count = cursor.fetchone()[0]
             if section_count == 0:
-                print("DEBUG: Database bestaat maar heeft geen secties, initialiseren...")
                 db_utils.initialize_db(g.db)
-            else:
-                print(f"DEBUG: Database bestaat al met {section_count} secties, geen initialisatie nodig")
-    
+
+        # Altijd migraties uitvoeren (idempotent — veilig bij herhaalde aanroepen)
+        db_utils.migrate_db(g.db)
+
     return g.db
 
 # Functie om database connectie te sluiten
@@ -85,14 +112,66 @@ def inject_global_data():
     return {'now': datetime.now()}
 
 # ================================================================
+# Authenticatie routes (Login / Logout)
+# ================================================================
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login pagina."""
+    if 'user_id' in session:
+        return redirect(url_for('upload_document'))
+
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        db = get_db()
+        user = db.execute(
+            'SELECT * FROM users WHERE username = ?', (username,)
+        ).fetchone()
+
+        if user and check_password_hash(user['password_hash'], password):
+            session.clear()
+            session['user_id']   = user['id']
+            session['username']  = user['username']
+            session['user_role'] = user['role']
+            if user['role'] == 'admin':
+                return redirect(url_for('index'))
+            else:
+                return redirect(url_for('upload_document'))
+        else:
+            flash('Ongeldige gebruikersnaam of wachtwoord.', 'danger')
+
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    """Uitloggen en sessie wissen."""
+    session.clear()
+    flash('Je bent uitgelogd.', 'info')
+    return redirect(url_for('login'))
+
+
+@app.route('/demo_loader')
+def demo_loader():
+    """Demo pagina voor de laadanimatie."""
+    return render_template('demo_loader.html')
+
+
+# ================================================================
 # Hoofdroutes (Welkomst, Upload, Documenten Overzicht, Analyse)
 # ================================================================
+
 @app.route('/')
+@login_required
 def index():
     """Welkomstpagina van de applicatie."""
-    return render_template('index.html') 
+    if not is_admin():
+        return redirect(url_for('upload_document'))
+    return render_template('index.html')
 
 @app.route('/upload', methods=['GET', 'POST'])
+@login_required
 def upload_document():
     """Route voor het uploaden van een nieuw document."""
     db = get_db()
@@ -120,6 +199,13 @@ def upload_document():
         else:
             try:
                 original_filename = file.filename
+                if original_filename is None:
+                    flash('Ongeldige bestandsnaam!', 'danger')
+                    return render_template('upload.html', 
+                                           document_types=document_types, 
+                                           organizations=organizations,
+                                           form_data=form_data)
+                
                 filename = secure_filename(original_filename)
                 file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 file.save(file_path)
@@ -127,11 +213,11 @@ def upload_document():
                 # Sla document op in DB
                 document_id = db_utils.get_or_create_document(db, original_filename, file_path)
 
-                # Werk document_type_id, organization_id, file_size en analysis_status bij
+                # Werk document_type_id, organization_id, file_size, analysis_status en uploaded_by bij
                 file_size = os.path.getsize(file_path)
                 db.execute(
-                    'UPDATE documents SET document_type_id = ?, organization_id = ?, file_size = ?, analysis_status = ? WHERE id = ?',
-                    (document_type_id, organization_id, file_size, 'pending', document_id)
+                    'UPDATE documents SET document_type_id = ?, organization_id = ?, file_size = ?, analysis_status = ?, uploaded_by = ? WHERE id = ?',
+                    (document_type_id, organization_id, file_size, 'pending', current_user_id(), document_id)
                 )
                 db.commit()
 
@@ -148,25 +234,40 @@ def upload_document():
                            organizations=organizations,
                            form_data=form_data)
 
-
 @app.route('/documents')
+@login_required
 def list_documents():
-    """Overzichtspagina van alle geüploade documenten."""
+    """Overzichtspagina van geüploade documenten.
+    Admins zien alle documenten; consumenten zien alleen hun eigen documenten."""
     db = get_db()
-    documents = db.execute('''
-        SELECT d.*, dt.name AS document_type_name, o.name AS organization_name
-        FROM documents d
-        JOIN document_types dt ON d.document_type_id = dt.id
-        LEFT JOIN organizations o ON d.organization_id = o.id
-        ORDER BY d.uploaded_at DESC
-    ''').fetchall()
+    if is_admin():
+        documents = db.execute('''
+            SELECT d.*, dt.name AS document_type_name, o.name AS organization_name,
+                   u.username AS uploader_name
+            FROM documents d
+            JOIN document_types dt ON d.document_type_id = dt.id
+            LEFT JOIN organizations o ON d.organization_id = o.id
+            LEFT JOIN users u ON d.uploaded_by = u.id
+            ORDER BY d.uploaded_at DESC
+        ''').fetchall()
+    else:
+        documents = db.execute('''
+            SELECT d.*, dt.name AS document_type_name, o.name AS organization_name,
+                   u.username AS uploader_name
+            FROM documents d
+            JOIN document_types dt ON d.document_type_id = dt.id
+            LEFT JOIN organizations o ON d.organization_id = o.id
+            LEFT JOIN users u ON d.uploaded_by = u.id
+            WHERE d.uploaded_by = ?
+            ORDER BY d.uploaded_at DESC
+        ''', (current_user_id(),)).fetchall()
     return render_template('documents.html', documents=documents)
 
-
 @app.route('/analysis/<int:document_id>')
+@login_required
 def document_analysis(document_id):
     """Gedetailleerde analyseweergave voor een specifiek document."""
-    db = get_db() 
+    db = get_db()
 
     document = db.execute('SELECT * FROM documents WHERE id = ?', (document_id,)).fetchone()
     if document is None:
@@ -198,923 +299,788 @@ def document_analysis(document_id):
             print(f"--- DEBUGGING in extract_document_content ---")
             print(f"Totaal aantal paragrafen: {len(document_paragraphs)}")
             print(f"Gevonden headings: {len(headings_in_document)}")
-            for heading in headings_in_document[:5]: 
-                print(f"  Herkende Heading: Niveau {heading.get('level')}, Tekst: '{heading.get('text')}'")
-            print(f"--- Einde DEBUGGING in extract_document_content ---")
-
-
-            # 2. Sectieherkenning en verrijking (nieuwe structuur)
-            expected_sections_metadata = db_utils.get_sections_for_document_type_new(db, document_type['id'])
             
-            recognized_sections_raw = section_recognition.recognize_and_enrich_sections(
+            # 2. Sectieherkenning
+            # Haal secties op die relevant zijn voor dit documenttype:
+            #   1) Direct gekoppeld via sections.document_type_id = X
+            #   2) Gekoppeld via de koppeltabel document_type_sections
+            #   3) Universele secties (document_type_id IS NULL en niet in de koppeltabel)
+            expected_sections_metadata = db.execute(
+                '''SELECT DISTINCT s.id, s.name, s.level, s.identifier, s.is_required,
+                          s.parent_id, s.alternative_names, s.order_index
+                   FROM sections s
+                   LEFT JOIN document_type_sections dts ON s.id = dts.section_id
+                   WHERE s.document_type_id = :dt_id
+                      OR dts.document_type_id = :dt_id
+                      OR (s.document_type_id IS NULL
+                          AND NOT EXISTS (
+                              SELECT 1 FROM document_type_sections dts2
+                              WHERE dts2.section_id = s.id
+                          ))
+                   ORDER BY
+                       CASE WHEN s.document_type_id IS NULL THEN 0 ELSE 1 END,
+                       s.order_index''',
+                {'dt_id': document_type['id']}
+            ).fetchall()
+
+            recognized_sects_raw = section_recognition.recognize_and_enrich_sections(
                 full_document_text,
                 document_paragraphs,
                 headings_in_document,
                 expected_sections_metadata
             )
-            print(f"--- Start sectieherkenning. Totaal herkende (unieke) secties: {len(recognized_sections_raw)} ---")
-            for sec in recognized_sections_raw:
-                if sec['found']:
-                    print(f"  Herkende Sectie: '{sec['name']}' (ID: {sec['db_id']}), Woorden: {sec['word_count']}, Kopjes: {len(sec['headings'])}")
-                else:
-                    print(f"  Niet herkende sectie (verplicht: {sec['is_required']}): '{sec['name']}' (ID: {sec['db_id']})")
-            print(f"--- Einde sectieherkenning. ---")
 
-            # 3. Criteria ophalen (nieuwe structuur)
-            criteria_for_analysis = db_utils.get_criteria_for_document_type_new(db, document_type['id'])
+            # Sla sectie-content op in database (geoptimaliseerd)
+            save_start = time.time()
+            batch_save_section_content(db, recognized_sects_raw)
+            save_duration = time.time() - save_start
+            performance_monitor.record_query_time('save_section_content', save_duration)
+            print(f"[OK] Sectie-content opslag voltooid in {save_duration:.2f} seconden")
 
-            # 4. Feedback genereren
+            # Combineer sectie-info uit DB met analyse-resultaten
+            # Gebruik dezelfde brede query als hierboven zodat de display-lijst klopt
+            all_db_sections = db.execute(
+                '''SELECT DISTINCT s.id, s.name, s.level, s.identifier
+                   FROM sections s
+                   LEFT JOIN document_type_sections dts ON s.id = dts.section_id
+                   WHERE s.document_type_id = :dt_id
+                      OR dts.document_type_id = :dt_id
+                      OR (s.document_type_id IS NULL
+                          AND NOT EXISTS (
+                              SELECT 1 FROM document_type_sections dts2
+                              WHERE dts2.section_id = s.id
+                          ))
+                   ORDER BY
+                       CASE WHEN s.document_type_id IS NULL THEN 0 ELSE 1 END,
+                       s.order_index''',
+                {'dt_id': document_type['id']}
+            ).fetchall()
+
+            # Maak een map voor snelle lookup van DB secties op identifier
+            db_sections_map = {s['identifier']: dict(s) for s in all_db_sections}
+
+            # Verrijk de herkende secties met 'found', 'word_count', 'confidence'
+            display_sections = []
+            for db_sec_info in all_db_sections:
+                recognized_sec = next((s for s in recognized_sects_raw if s.get('db_id') == db_sec_info['id']), None)
+                
+                section_data = {
+                    'id': db_sec_info['id'], # DB ID van de sectie
+                    'name': db_sec_info['name'],
+                    'level': db_sec_info['level'],
+                    'found': recognized_sec.get('found', False) if recognized_sec else False,
+                    'word_count': recognized_sec.get('word_count', 0) if recognized_sec else 0,
+                    'confidence': recognized_sec.get('confidence', None) if recognized_sec else None,
+                    'content': recognized_sec.get('content', '') if recognized_sec else '', # Sla content op voor latere weergave
+                    'identifier': db_sec_info['identifier'], # Nodig voor JS `showSectionContent`
+                    # Sla de originele heading-tekst op voor Word comment plaatsing
+                    # (secties gematcht via alias/fuzzy hebben een andere naam dan heading-tekst)
+                    'heading_text': recognized_sec.get('heading_text', '') if recognized_sec else '',
+                }
+                display_sections.append(section_data)
+
+            # 3. Criteria ophalen en feedback genereren
+            # Haal alle ingeschakelde criteria op voor dit documenttype, inclusief section_mappings
+            criteria_for_analysis = db_utils.get_criteria_for_document_type(db, document_type['id'])
+            
+            # Voer de feedback generatie uit (simulatie of echte LLM-call)
             generated_feedback_items = criterion_checking.generate_feedback(
-                doc_content=full_document_text, 
-                recognized_sections=recognized_sections_raw, 
-                criteria_list=criteria_for_analysis,
-                db_connection=db,
-                document_id=document_id,
-                document_type_id=document_type['id']
+                full_document_text,
+                recognized_sects_raw, # Geef de ruwe herkende secties mee
+                criteria_for_analysis,
+                db, # Geef de db-verbinding door voor eventuele extra lookups
+                document_id,
+                document_type['id']
             )
 
-            # 5. AI Feedback genereren (optioneel)
-            ai_feedback_data = {}
-            try:
-                # Check of Gemini API key beschikbaar is
-                gemini_api_key = os.getenv('GEMINI_API_KEY')
-                if gemini_api_key:
-                    print("DEBUG: Gemini API key gevonden, start AI feedback generatie...")
-                    ai_generator = AIFeedbackGenerator(api_key=gemini_api_key)
-                    
-                    # Genereer AI feedback per sectie
-                    section_ai_feedback = []
-                    for section in recognized_sections_raw:
-                        if section.get('found', False) and section.get('content', '').strip():
-                            print(f"DEBUG: Genereer AI feedback voor sectie: {section['name']}")
-                            ai_feedback = ai_generator.generate_section_feedback(
-                                section_name=section['name'],
-                                section_content=section['content'],
-                                document_type=document_type['name']
-                            )
-                            section_ai_feedback.append(ai_feedback)
-                    
-                    # Genereer document-level AI feedback
-                    if section_ai_feedback:
-                        print("DEBUG: Genereer document-level AI feedback...")
-                        document_ai_feedback = ai_generator.generate_document_overview(section_ai_feedback)
-                        ai_feedback_data = {
-                            'sections': section_ai_feedback,
-                            'document': document_ai_feedback
-                        }
-                        print("DEBUG: AI feedback succesvol gegenereerd")
-                    else:
-                        print("DEBUG: Geen secties gevonden voor AI feedback")
-                else:
-                    print("DEBUG: Geen Gemini API key gevonden, sla AI feedback over")
-            except Exception as e:
-                print(f"DEBUG: Fout bij AI feedback generatie: {e}")
-                ai_feedback_data = {}
-
-            # 6. Resultaten opslaan in database
-            # Update analysis_status van het document en sla de analysis_data op
-            analysis_summary_for_db = {
-                'sections': recognized_sections_raw, # De verrijkte secties die zijn herkend
-                'feedback_items': [
-                    {k: v for k, v in item.items() if k not in ['color', 'criteria_name', 'section_name']} 
-                    for item in generated_feedback_items
+            # 4. Sla geanalyseerde data op in het document (optioneel, voor caching)
+            analysis_summary = {
+                'sections': [
+                    {
+                        'id': s['id'],
+                        'name': s['name'],
+                        'level': s['level'],
+                        'found': s['found'],
+                        'word_count': s['word_count'],
+                        'confidence': s['confidence'],
+                        'content': s['content'] # Sla content ook op in analysis_data voor makkelijk ophalen
+                    } for s in display_sections
                 ],
-                'ai_feedback': ai_feedback_data,  # AI feedback data
-                'analysis_date': datetime.now().isoformat()
+                'feedback': generated_feedback_items,
+                'analysis_timestamp': datetime.now().isoformat()
             }
 
-            db.execute('UPDATE documents SET analysis_status = ?, analysis_data = ? WHERE id = ?', 
-                       ('completed', json.dumps(analysis_summary_for_db), document_id))
+            # Update document status en sla analysis data op
+            db.execute(
+                'UPDATE documents SET analysis_status = ?, analysis_data = ? WHERE id = ?',
+                ('completed', json.dumps(analysis_summary), document_id)
+            )
+            db.commit()
 
-            db.execute('DELETE FROM feedback_items WHERE document_id = ?', (document_id,))
-            
-            for feedback_item in generated_feedback_items:
-                db_utils.save_feedback_item(db, feedback_item, document_id)
-            
-            db.commit() 
-
-            flash('Documentanalyse voltooid!', 'success')
+            flash('Analyse succesvol voltooid!', 'success')
 
         except Exception as e:
+            print(f"Fout tijdens analyse: {e}")
+            traceback.print_exc()
+            flash(f'Fout tijdens analyse: {e}', 'danger')
             db.execute('UPDATE documents SET analysis_status = ? WHERE id = ?', ('failed', document_id))
             db.commit()
-            flash(f"Fout tijdens documentanalyse: {e}", "danger")
-            traceback.print_exc() 
-            return redirect(url_for('list_documents')) 
+            display_sections = []
+            generated_feedback_items = []
 
-    # Data ophalen voor weergave (altijd, of analyse nu net is voltooid of gecached)
-    document = db.execute('SELECT * FROM documents WHERE id = ?', (document_id,)).fetchone()
-    
-    feedback_items_data = db.execute("""
-        SELECT
-            fi.status,
-            fi.message,
-            fi.suggestion,
-            fi.location,
-            fi.confidence,
-            c.name AS criterion_name,
-            c.color AS color,
-            s.name AS section_name
-        FROM feedback_items fi
-        JOIN criteria c ON fi.criteria_id = c.id
-        LEFT JOIN sections s ON fi.section_id = s.id
-        WHERE fi.document_id = ?
-        ORDER BY fi.generated_at DESC
-    """, (document_id,)).fetchall()
+    else:
+        # Geen analyse gedraaid: lees opgeslagen data uit de database
+        try:
+            if document['analysis_data']:
+                analysis_data = json.loads(document['analysis_data'])
+                display_sections = analysis_data.get('sections', [])
+                generated_feedback_items = analysis_data.get('feedback', [])
+            else:
+                display_sections = []
+                generated_feedback_items = []
+        except (json.JSONDecodeError, TypeError):
+            display_sections = []
+            generated_feedback_items = []
 
+    # Bereken feedback statistieken
     feedback_stats = {
-        'violations': sum(1 for f in feedback_items_data if f['status'] == 'error' or f['status'] == 'violation'),
-        'warnings': sum(1 for f in feedback_items_data if f['status'] == 'warning'),
-        'passed': sum(1 for f in feedback_items_data if f['status'] == 'ok' or f['status'] == 'info'),
-        'total': len(feedback_items_data)
+        'violations': len([f for f in generated_feedback_items if f.get('status') in ('violation', 'error')]),
+        'warnings':   len([f for f in generated_feedback_items if f.get('status') == 'warning']),
+        'info':       len([f for f in generated_feedback_items if f.get('status') == 'info']),
+        'passed':     len([f for f in generated_feedback_items if f.get('status') == 'ok']),
     }
 
-    # Haal de sectie data op zoals die in analysis_data is opgeslagen
-    display_sections = []
-    expected_sections_metadata = db_utils.get_sections_for_document_type_new(db, document_type['id'])
+    # Bereken alinea's per sectie (voor weergave per alinea in de template)
+    def split_into_paragraphs_for_display(content):
+        content = content.replace('\r\n', '\n').replace('\r', '\n')
+        def is_heading_like(line):
+            words = re.findall(r'\b\w+\b', line)
+            return len(words) <= 10 and not re.search(r'[.!?]$', line.strip())
+        paragraphs = []
+        current = []
+        for line in content.split('\n'):
+            s = line.strip()
+            if not s:
+                if current:
+                    paragraphs.append(' '.join(current))
+                    current = []
+            elif is_heading_like(s):
+                if current:
+                    paragraphs.append(' '.join(current))
+                    current = []
+            else:
+                current.append(s)
+        if current:
+            paragraphs.append(' '.join(current))
+        return paragraphs
 
-    if document['analysis_status'] == 'completed' and document['analysis_data']:
-        analyzed_data_from_db = json.loads(document['analysis_data'])
-        analyzed_sections_map = {s['identifier']: s for s in analyzed_data_from_db.get('sections', [])}
-        for es_data in expected_sections_metadata:
-            display_sections.append(analyzed_sections_map.get(es_data['identifier'], {
-                'identifier': es_data['identifier'],
-                'name': es_data['name'],
-                'level': es_data.get('level', 0), 
-                'found': False,
-                'word_count': 0,
-                'confidence': 0.0,
-                'content': '',
-                'headings': [],
-                'db_id': es_data['id'],
-                'is_required': es_data.get('is_required', False)
-            }))
-    else: 
-        for es_data in expected_sections_metadata:
-            display_sections.append({
-                'identifier': es_data['identifier'],
-                'name': es_data['name'],
-                'level': es_data.get('level', 0),
-                'found': False,
-                'word_count': 0,
-                'confidence': 0.0,
-                'content': '',
-                'headings': [],
-                'db_id': es_data['id'],
-                'is_required': es_data.get('is_required', False)
-            })
+    for section in display_sections:
+        section['paragraphs'] = split_into_paragraphs_for_display(section.get('content', ''))
 
-    return render_template(
-        'document_view.html', 
-        document=document,
-        document_type=document_type,
-        organization=organization,
-        sections=display_sections, 
-        feedback_items=feedback_items_data,
-        feedback_stats=feedback_stats
-    )
+    # Groepeer feedback per sectie-naam voor overzichtelijke weergave
+    feedback_by_section = {}
+    non_section_feedback = []
+    for fb in generated_feedback_items:
+        sname = fb.get('section_name')
+        if sname:
+            feedback_by_section.setdefault(sname, []).append(fb)
+        else:
+            non_section_feedback.append(fb)
 
+    return render_template('analysis.html',
+                           document=document,
+                           document_type=document_type,
+                           organization=organization,
+                           sections=display_sections,
+                           feedback_items=generated_feedback_items,
+                           feedback_by_section=feedback_by_section,
+                           non_section_feedback=non_section_feedback,
+                           feedback_stats=feedback_stats)
 
 @app.route('/documents/<int:document_id>/export')
+@login_required
 def export_document(document_id):
-    """Export document met feedback naar Word document."""
-    # Haal comment type op uit query parameters
-    comment_type = request.args.get('comment_type', 'real')  # Default naar echte comments
-    
+    """Exporteer feedback naar Word document."""
     db = get_db()
     
-    # Haal document en analyse data op
     document = db.execute('SELECT * FROM documents WHERE id = ?', (document_id,)).fetchone()
     if document is None:
         flash('Document niet gevonden.', 'danger')
         return redirect(url_for('list_documents'))
-    
-    if document['analysis_status'] != 'completed':
-        flash('Document analyse nog niet voltooid.', 'danger')
-        return redirect(url_for('document_analysis', document_id=document_id))
-    
+
     try:
-        # Haal analyse data op
-        analysis_data = json.loads(document['analysis_data'])
-        
-        # Haal feedback items op
-        feedback_items = db.execute("""
-            SELECT
-                fi.status,
-                fi.message,
-                fi.suggestion,
-                fi.location,
-                fi.confidence,
-                c.name AS criterion_name,
-                c.color AS color,
-                s.name AS section_name
-            FROM feedback_items fi
-            JOIN criteria c ON fi.criteria_id = c.id
-            LEFT JOIN sections s ON fi.section_id = s.id
-            WHERE fi.document_id = ?
-            ORDER BY fi.generated_at DESC
-        """, (document_id,)).fetchall()
-        
-        # Converteer feedback items naar dictionaries
-        feedback_items_dict = []
-        for item in feedback_items:
-            feedback_items_dict.append(dict(item))
-        
-        # Voeg feedback items toe aan analysis data
-        analysis_data['feedback_items'] = feedback_items_dict
-        
-        # Maak export directory
-        export_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'exports')
-        os.makedirs(export_dir, exist_ok=True)
-        
-        # Genereer output bestandsnaam met comment type indicator
-        base_name = os.path.splitext(document['original_filename'])[0]
-        comment_suffix = "_met_comments" if comment_type == 'real' else "_met_feedback"
-        output_filename = f"{base_name}{comment_suffix}.docx"
-        output_path = os.path.join(export_dir, output_filename)
-        
-        # Bepaal of echte comments of tekst-based feedback gebruikt moet worden
-        use_real_comments = (comment_type == 'real')
-        
-        # Export naar Word met feedback
-        exporter = WordFeedbackExporter()
-        exporter.add_feedback_to_document(
-            original_file_path=document['file_path'],
-            feedback_data=analysis_data,
-            output_file_path=output_path,
-            use_real_comments=use_real_comments
+        # Haal analysis data op
+        if not document['analysis_data']:
+            flash('Geen analyse data beschikbaar voor export.', 'danger')
+            return redirect(url_for('document_analysis', document_id=document_id))
+
+        analysis_data  = json.loads(document['analysis_data'])
+        feedback_items = analysis_data.get('feedback', [])
+        saved_sections = analysis_data.get('sections', [])
+
+        # Controleer of het originele bestand nog bestaat
+        if not os.path.exists(document['file_path']):
+            flash('Origineel bestand niet gevonden op de server.', 'danger')
+            return redirect(url_for('document_analysis', document_id=document_id))
+
+        # Maak export bestandsnaam
+        base_name       = os.path.splitext(document['original_filename'])[0]
+        export_filename = f"{base_name}_gecommentarieerd.docx"
+        export_path     = os.path.join(app.config['UPLOAD_FOLDER'], export_filename)
+
+        # Voeg inline comments toe aan het originele Word document
+        add_inline_comments(
+            original_docx_path  = document['file_path'],
+            feedback_items      = feedback_items,
+            recognized_sections = saved_sections,
+            output_path         = export_path,
         )
-        
+
         # Stuur bestand naar gebruiker
         from flask import send_file
-        return send_file(
-            output_path,
-            as_attachment=True,
-            download_name=output_filename,
-            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        )
-        
+        return send_file(export_path, as_attachment=True, download_name=export_filename)
+
     except Exception as e:
         flash(f'Fout bij export: {e}', 'danger')
-        import traceback
         traceback.print_exc()
         return redirect(url_for('document_analysis', document_id=document_id))
 
 @app.route('/documents/<int:document_id>/reanalyze')
+@login_required
 def reanalyze_document(document_id):
-    """Triggert een nieuwe analyse voor een document."""
-    flash(f'Document {document_id} wordt opnieuw geanalyseerd...', 'info')
+    """Forceer heranalyse van een document."""
     return redirect(url_for('document_analysis', document_id=document_id, reanalyze=True))
 
+# Performance monitoring route
+@app.route('/performance')
+@admin_required
+def performance_stats():
+    """Toont performance statistieken."""
+    stats = performance_monitor.get_performance_summary()
+    return render_template('performance.html', stats=stats)
 
 # ================================================================
 # Criteria Management Routes
 # ================================================================
+
 @app.route('/criteria')
+@admin_required
 def list_criteria():
-    """Overzicht van alle criteria."""
+    """Overzichtspagina van alle criteria."""
     db = get_db()
     criteria = db.execute('''
-        SELECT c.*, dt.name AS document_type_name
+        SELECT c.*, o.name AS organization_name
         FROM criteria c
-        JOIN document_type_criteria_mappings dtcm ON c.id = dtcm.criteria_id
-        JOIN document_types dt ON dtcm.document_type_id = dt.id
+        LEFT JOIN organizations o ON c.organization_id = o.id
         ORDER BY c.name
     ''').fetchall()
     return render_template('criteria_list.html', criteria=criteria)
 
 @app.route('/criteria/add', methods=('GET', 'POST'))
+@admin_required
 def add_criterion():
-    """Formulier om een nieuw criterium toe te voegen."""
+    """Route voor het toevoegen van een nieuw criterium."""
     db = get_db()
-    document_types = db.execute('SELECT id, name FROM document_types').fetchall()
-    try:
-        organizations = db.execute('SELECT id, name FROM organizations').fetchall()
-    except sqlite3.OperationalError:
-        organizations = [] 
-
+    
     if request.method == 'POST':
-        doc_type_id = request.form.get('document_type_id') 
-        name = request.form['name'].strip()
-        description = request.form.get('description', '').strip()
-        rule_type = request.form.get('rule_type')
-        application_scope = request.form.get('application_scope')
-        severity = request.form.get('severity')
-        is_enabled = 1 if request.form.get('is_enabled') == 'on' else 0
+        name = request.form['name']
+        description = request.form.get('description', '')
+        organization_id = request.form.get('organization_id')
+        rule_type = request.form.get('rule_type', 'content_check')
+        application_scope = request.form.get('application_scope', 'document')
+        severity = request.form.get('severity', 'warning')
+        # Checkbox stuurt 'on' als aangevinkt, niets als niet → converteer naar int 1/0
+        is_enabled = 1 if request.form.get('is_enabled') else 0
+        show_suggestion = bool(request.form.get('show_suggestion'))
+        color = request.form.get('color', '#3B82F6')
         error_message = request.form.get('error_message', '').strip()
         fixed_feedback_text = request.form.get('fixed_feedback_text', '').strip()
-        frequency_unit = request.form.get('frequency_unit')
-        max_mentions_per = request.form.get('max_mentions_per')
-        expected_value_min = request.form.get('expected_value_min')
-        expected_value_max = request.form.get('expected_value_max')
-        color = request.form.get('color')
+        frequency_unit = request.form.get('frequency_unit', 'document')
+        max_mentions_per = int(request.form.get('max_mentions_per') or 0)
+        expected_value_min_raw = request.form.get('expected_value_min', '').strip()
+        expected_value_max_raw = request.form.get('expected_value_max', '').strip()
+        expected_value_min = float(expected_value_min_raw) if expected_value_min_raw else None
+        expected_value_max = float(expected_value_max_raw) if expected_value_max_raw else None
+        check_type = request.form.get('check_type', 'none')
+        # Parameters opbouwen op basis van check_type
+        if check_type in ('keyword_forbidden', 'keyword_required'):
+            keywords_raw = request.form.get('keywords', '').strip()
+            kw_list = [k.strip() for k in keywords_raw.split(',') if k.strip()]
+            parameters = json.dumps({'keywords': kw_list, 'show_suggestion': show_suggestion}, ensure_ascii=False) if kw_list else json.dumps({'show_suggestion': show_suggestion})
+        elif check_type == 'llm_review':
+            parameters = json.dumps({
+                'llm_role_prompt':     request.form.get('llm_role_prompt', '').strip(),
+                'llm_criteria_prompt': request.form.get('llm_criteria_prompt', '').strip(),
+                'llm_check_ai_style':  bool(request.form.get('llm_check_ai_style')),
+                'show_suggestion':     show_suggestion,
+            }, ensure_ascii=False)
+        else:
+            parameters = json.dumps({'show_suggestion': show_suggestion})
 
-        # Validatie
         if not name:
             flash('Naam is verplicht!', 'danger')
-        elif not doc_type_id:
-            flash('Documenttype is verplicht!', 'danger')
-        elif not rule_type:
-            flash('Regeltype is verplicht!', 'danger')
-        elif not application_scope:
-            flash('Toepassingsgebied is verplicht!', 'danger')
-        else:
-            # Check voor duplicaten
-            existing = db.execute('SELECT id FROM criteria WHERE name = ?', (name,)).fetchone()
-            if existing:
-                flash(f'Er bestaat al een criterium met de naam "{name}"!', 'danger')
-            else:
-                try:
-                    # Data type conversies
-                    doc_type_id = int(doc_type_id) if doc_type_id else None
-                    max_mentions_per = int(max_mentions_per) if max_mentions_per and max_mentions_per.isdigit() else 0
-                    expected_value_min = float(expected_value_min) if expected_value_min else None
-                    expected_value_max = float(expected_value_max) if expected_value_max else None
-
-                    cursor = db.cursor()
-                    cursor.execute(
-                        '''INSERT INTO criteria (
-                            name, description, rule_type, application_scope, is_enabled, severity,
-                            error_message, fixed_feedback_text, frequency_unit, max_mentions_per,
-                            expected_value_min, expected_value_max, color
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                        (name, description, rule_type, application_scope, is_enabled, severity,
-                         error_message, fixed_feedback_text, frequency_unit, max_mentions_per,
-                         expected_value_min, expected_value_max, color)
-                    )
-                    criterion_id = cursor.lastrowid
-
-                    # Voeg mapping toe
-                    db.execute(
-                        'INSERT INTO document_type_criteria_mappings (document_type_id, criteria_id) VALUES (?, ?)',
-                        (doc_type_id, criterion_id)
-                    )
-                    db.commit()
-                    flash('Criterium succesvol toegevoegd!', 'success')
-                    return redirect(url_for('list_criteria'))
-                except sqlite3.IntegrityError as e:
-                    flash(f'Fout bij toevoegen: {e}', 'danger')
-                except Exception as e:
-                    flash(f'Er is een onverwachte fout opgetreden: {e}', 'danger')
-            
-    return render_template('add_criterion.html', 
-                           document_types=document_types, 
-                           organizations=organizations,
-                           form_data=request.form)
-
-@app.route('/criteria/edit/<int:id>', methods=('GET', 'POST'))
-def edit_criterion(id):
-    """Formulier om een bestaand criterium te bewerken."""
-    print(f"=== DEBUG: edit_criterion called with ID: {id} ===")
-    db = get_db()
-    
-    # Debug: Check welk criterium we gaan bewerken
-    criterion = db.execute('SELECT * FROM criteria WHERE id = ?', (id,)).fetchone()
-    if criterion:
-        print(f"DEBUG: Found criterion to edit: ID={criterion['id']}, Name='{criterion['name']}'")
-    else:
-        print(f"DEBUG: Criterion with ID {id} not found!")
-        abort(404)
-
-    document_types = db.execute('SELECT id, name FROM document_types').fetchall()
-    try:
-        organizations = db.execute('SELECT id, name FROM organizations').fetchall()
-    except sqlite3.OperationalError:
-        organizations = []
-
-    current_doc_type_mapping = db.execute(
-        'SELECT document_type_id FROM document_type_criteria_mappings WHERE criteria_id = ?', (id,)
-    ).fetchone()
-    current_doc_type_id = current_doc_type_mapping['document_type_id'] if current_doc_type_mapping else None
-    print(f"DEBUG: Current document type ID: {current_doc_type_id}")
-
-    if request.method == 'POST':
-        print("DEBUG: Processing POST request for criterion edit")
-        
-        # Debug: Log alle form data
-        print("DEBUG: Form data received:")
-        for key, value in request.form.items():
-            print(f"  {key}: {value}")
-        
-        doc_type_id = request.form.get('document_type_id')
-        name = request.form['name']
-        description = request.form.get('description')
-        rule_type = request.form.get('rule_type')
-        application_scope = request.form.get('application_scope')
-        severity = request.form.get('severity')
-        is_enabled = 1 if request.form.get('is_enabled') == 'on' else 0
-        error_message = request.form.get('error_message')
-        fixed_feedback_text = request.form.get('fixed_feedback_text')
-        frequency_unit = request.form.get('frequency_unit')
-        max_mentions_per = request.form.get('max_mentions_per')
-        expected_value_min = request.form.get('expected_value_min')
-        expected_value_max = request.form.get('expected_value_max')
-        color = request.form.get('color')
-
-        doc_type_id = int(doc_type_id) if doc_type_id else None
-        max_mentions_per = int(max_mentions_per) if max_mentions_per and max_mentions_per.isdigit() else 0
-        expected_value_min = float(expected_value_min) if expected_value_min else None
-        expected_value_max = float(expected_value_max) if expected_value_max else None
-
-        print(f"DEBUG: Processed values - doc_type_id: {doc_type_id}, name: '{name}', rule_type: '{rule_type}', application_scope: '{application_scope}'")
-
-        if not name or not doc_type_id or not rule_type or not application_scope:
-            print("DEBUG: Validation failed - missing required fields")
-            flash('Naam, documenttype, regeltype en toepassingsgebied zijn verplicht!', 'danger')
         else:
             try:
-                print("DEBUG: Updating criterion in database...")
-                result = db.execute(
-                    '''UPDATE criteria SET
-                        name = ?, description = ?, rule_type = ?, application_scope = ?,
-                        is_enabled = ?, severity = ?, error_message = ?, fixed_feedback_text = ?,
-                        frequency_unit = ?, max_mentions_per = ?, expected_value_min = ?,
-                        expected_value_max = ?, color = ?
-                    WHERE id = ?''',
-                    (name, description, rule_type, application_scope,
-                     is_enabled, severity, error_message, fixed_feedback_text,
-                     frequency_unit, max_mentions_per, expected_value_min,
-                     expected_value_max, color, id)
+                cursor = db.cursor()
+                cursor.execute(
+                    '''INSERT INTO criteria
+                       (name, description, rule_type, application_scope, severity, is_enabled,
+                        organization_id, color, error_message, fixed_feedback_text,
+                        frequency_unit, max_mentions_per, expected_value_min, expected_value_max,
+                        check_type, parameters)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (name, description, rule_type, application_scope, severity, is_enabled,
+                     organization_id, color, error_message or None, fixed_feedback_text or None,
+                     frequency_unit, max_mentions_per, expected_value_min, expected_value_max,
+                     check_type, parameters)
                 )
-                print(f"DEBUG: UPDATE query affected {result.rowcount} rows")
-                
-                if doc_type_id != current_doc_type_id:
-                    print(f"DEBUG: Updating document type mapping from {current_doc_type_id} to {doc_type_id}")
-                    mapping_result = db.execute(
-                        'UPDATE document_type_criteria_mappings SET document_type_id = ? WHERE criteria_id = ?',
-                        (doc_type_id, id)
-                    )
-                    print(f"DEBUG: Mapping UPDATE query affected {mapping_result.rowcount} rows")
-                
                 db.commit()
-                print("DEBUG: Database committed successfully")
-                flash('Criterium succesvol bijgewerkt!', 'success')
+                flash('Criterium succesvol toegevoegd!', 'success')
                 return redirect(url_for('list_criteria'))
-            except sqlite3.IntegrityError as e:
-                print(f"DEBUG: SQLite IntegrityError: {e}")
-                flash(f'Fout bij bijwerken: een criterium met deze naam bestaat mogelijk al. {e}', 'danger')
             except Exception as e:
-                print(f"DEBUG: Unexpected error: {e}")
-                flash(f'Er is een onverwachte fout opgetreden: {e}', 'danger')
-    else:
-        print("DEBUG: Processing GET request for criterion edit")
+                flash(f'Fout bij toevoegen: {e}', 'danger')
+                traceback.print_exc()
+
+    organizations = db.execute('SELECT id, name FROM organizations').fetchall()
     
-    print("=== DEBUG: edit_criterion completed ===")
-    return render_template('edit_criterion.html', 
-                           criterion=criterion, 
-                           document_types=document_types, 
-                           organizations=organizations,
-                           current_doc_type_id=current_doc_type_id,
-                           form_data=request.form)
+    return render_template('add_criterion.html', 
+                           organizations=organizations)
 
-@app.route('/criteria/delete/<int:id>', methods=('POST',))
-def delete_criterion(id):
-    """Verwijder een criterium."""
-    db = get_db()
-    try:
-        db.execute('DELETE FROM document_type_criteria_mappings WHERE criteria_id = ?', (id,))
-        db.execute('DELETE FROM criteria_section_mappings WHERE criteria_id = ?', (id,))
-        db.execute('DELETE FROM criteria WHERE id = ?', (id,))
-        db.commit()
-        flash('Criterium succesvol verwijderd!', 'success')
-    except sqlite3.Error as e:
-        flash(f'Fout bij verwijderen van criterium: {e}', 'danger')
-    return redirect(url_for('list_criteria'))
-
-
-@app.route('/criteria/<int:id>/map_sections', methods=('GET', 'POST'))
-def map_criteria_to_sections(id):
-    """Beheert de mapping van een criterium aan secties (include/exclude)."""
+@app.route('/criteria/edit/<int:id>', methods=('GET', 'POST'))
+@admin_required
+def edit_criterion(id):
+    """Route voor het bewerken van een criterium."""
     db = get_db()
     criterion = db.execute('SELECT * FROM criteria WHERE id = ?', (id,)).fetchone()
-    if not criterion:
+    
+    if criterion is None:
         flash('Criterium niet gevonden.', 'danger')
         return redirect(url_for('list_criteria'))
-
-    # Haal alle secties op in document volgorde
-    all_sections = db.execute('SELECT * FROM sections ORDER BY order_index, name').fetchall()
     
-    # Haal huidige mappings op
-    current_mappings = db.execute('''
-        SELECT csm.*, s.name as section_name 
-        FROM criteria_section_mappings csm
-        JOIN sections s ON csm.section_id = s.id
-        WHERE csm.criteria_id = ?
-    ''', (id,)).fetchall()
-    
-    # Maak dictionary voor snelle lookup
-    mapped_sections = {m['section_id']: m for m in current_mappings}
-
     if request.method == 'POST':
-        # Verwijder eerst alle bestaande mappings voor dit criterium
-        db.execute('DELETE FROM criteria_section_mappings WHERE criteria_id = ?', (id,))
+        name = request.form['name']
+        description = request.form.get('description', '')
+        organization_id = request.form.get('organization_id')
+        rule_type = request.form.get('rule_type', 'mention')
+        application_scope = request.form.get('application_scope', 'document_only')
+        severity = request.form.get('severity', 'warning')
+        # Checkbox stuurt 'on' als aangevinkt, niets als niet → converteer naar int 1/0
+        is_enabled = 1 if request.form.get('is_enabled') else 0
+        show_suggestion = bool(request.form.get('show_suggestion'))
+        color = request.form.get('color', '#3B82F6')
+        error_message = request.form.get('error_message', '').strip()
+        fixed_feedback_text = request.form.get('fixed_feedback_text', '').strip()
+        frequency_unit = request.form.get('frequency_unit', 'document')
+        max_mentions_per = int(request.form.get('max_mentions_per') or 0)
+        expected_value_min_raw = request.form.get('expected_value_min', '').strip()
+        expected_value_max_raw = request.form.get('expected_value_max', '').strip()
+        expected_value_min = float(expected_value_min_raw) if expected_value_min_raw else None
+        expected_value_max = float(expected_value_max_raw) if expected_value_max_raw else None
+        check_type = request.form.get('check_type', 'none')
+        # Parameters opbouwen op basis van check_type
+        if check_type in ('keyword_forbidden', 'keyword_required'):
+            keywords_raw = request.form.get('keywords', '').strip()
+            kw_list = [k.strip() for k in keywords_raw.split(',') if k.strip()]
+            parameters = json.dumps({'keywords': kw_list, 'show_suggestion': show_suggestion}, ensure_ascii=False) if kw_list else json.dumps({'show_suggestion': show_suggestion})
+        elif check_type == 'llm_review':
+            parameters = json.dumps({
+                'llm_role_prompt':     request.form.get('llm_role_prompt', '').strip(),
+                'llm_criteria_prompt': request.form.get('llm_criteria_prompt', '').strip(),
+                'llm_check_ai_style':  bool(request.form.get('llm_check_ai_style')),
+                'show_suggestion':     show_suggestion,
+            }, ensure_ascii=False)
+        else:
+            parameters = json.dumps({'show_suggestion': show_suggestion})
 
-        # Voeg nieuwe mappings toe op basis van form data
-        selected_section_ids = request.form.getlist('selected_sections')
-        excluded_section_ids = request.form.getlist('excluded_sections')
+        if not name:
+            flash('Naam is verplicht!', 'danger')
+        else:
+            try:
+                db.execute(
+                    '''UPDATE criteria
+                       SET name = ?, description = ?, organization_id = ?,
+                           rule_type = ?, application_scope = ?, severity = ?, is_enabled = ?,
+                           color = ?, error_message = ?, fixed_feedback_text = ?,
+                           frequency_unit = ?, max_mentions_per = ?,
+                           expected_value_min = ?, expected_value_max = ?,
+                           check_type = ?, parameters = ?
+                       WHERE id = ?''',
+                    (name, description, organization_id, rule_type,
+                     application_scope, severity, is_enabled, color,
+                     error_message or None, fixed_feedback_text or None,
+                     frequency_unit, max_mentions_per,
+                     expected_value_min, expected_value_max,
+                     check_type, parameters, id)
+                )
+                db.commit()
+                flash('Criterium succesvol bijgewerkt!', 'success')
+                return redirect(url_for('list_criteria'))
+            except Exception as e:
+                flash(f'Fout bij bijwerken: {e}', 'danger')
+                traceback.print_exc()
 
-        for section_id_str in selected_section_ids:
-            section_id = int(section_id_str)
-            db.execute(
-                'INSERT INTO criteria_section_mappings (criteria_id, section_id, is_excluded) VALUES (?, ?, ?)',
-                (id, section_id, 0)
-            )
-        
-        for section_id_str in excluded_section_ids:
-            section_id = int(section_id_str)
-            db.execute(
-                'INSERT INTO criteria_section_mappings (criteria_id, section_id, is_excluded) VALUES (?, ?, ?)',
-                (id, section_id, 1)
-            )
-        
-        # Update application_scope van het criterium
-        application_scope = request.form.get('application_scope', 'all')
-        if application_scope not in ['all', 'document_only', 'specific_sections', 'exclude_sections']:
-            application_scope = 'all'
-        
-        db.execute('UPDATE criteria SET application_scope = ? WHERE id = ?', (application_scope, id))
-        db.commit()
+    organizations = db.execute('SELECT id, name FROM organizations').fetchall()
 
-        flash(f'Sectie mappings voor criterium "{criterion["name"]}" succesvol bijgewerkt!', 'success')
+    # Parseer parameters JSON voor pre-filling in het formulier
+    criterion_keywords = ''
+    llm_role_prompt = ''
+    llm_criteria_prompt = ''
+    llm_check_ai_style = False
+    try:
+        criterion_dict = dict(criterion)
+        params = json.loads(criterion_dict.get('parameters') or '{}')
+        criterion_keywords = ', '.join(params.get('keywords', []))
+        llm_role_prompt     = params.get('llm_role_prompt', '')
+        llm_criteria_prompt = params.get('llm_criteria_prompt', '')
+        llm_check_ai_style  = bool(params.get('llm_check_ai_style', False))
+        # show_suggestion: standaard True (bestaande criteria tonen suggestie tenzij expliciet uitgeschakeld)
+        show_suggestion     = params.get('show_suggestion', True)
+    except (json.JSONDecodeError, TypeError, KeyError, IndexError):
+        show_suggestion = True
+
+    return render_template('edit_criterion.html',
+                           criterion=criterion,
+                           organizations=organizations,
+                           criterion_keywords=criterion_keywords,
+                           llm_role_prompt=llm_role_prompt,
+                           llm_criteria_prompt=llm_criteria_prompt,
+                           llm_check_ai_style=llm_check_ai_style,
+                           show_suggestion=show_suggestion,
+                           current_doc_type_id=None)
+
+@app.route('/criteria/delete/<int:id>', methods=('POST',))
+@admin_required
+def delete_criterion(id):
+    """Route voor het verwijderen van een criterium."""
+    db = get_db()
+    criterion = db.execute('SELECT * FROM criteria WHERE id = ?', (id,)).fetchone()
+    
+    if criterion is None:
+        flash('Criterium niet gevonden.', 'danger')
+    else:
+        try:
+            db.execute('DELETE FROM criteria WHERE id = ?', (id,))
+            db.commit()
+            flash('Criterium succesvol verwijderd!', 'success')
+        except Exception as e:
+            flash(f'Fout bij verwijderen: {e}', 'danger')
+            traceback.print_exc()
+    
+    return redirect(url_for('list_criteria'))
+
+@app.route('/criteria/<int:id>/map_sections', methods=('GET', 'POST'))
+@admin_required
+def map_criteria_to_sections(id):
+    """Route voor het mappen van criteria naar secties."""
+    db = get_db()
+    criterion = db.execute('SELECT * FROM criteria WHERE id = ?', (id,)).fetchone()
+    
+    if criterion is None:
+        flash('Criterium niet gevonden.', 'danger')
         return redirect(url_for('list_criteria'))
+    
+    if request.method == 'POST':
+        selected_sections = request.form.getlist('selected_sections')
+        excluded_sections = request.form.getlist('excluded_sections')
+        new_scope = request.form.get('application_scope')
 
-    return render_template(
-        'criteria_section_mapping.html',
-        criterion=criterion,
-        all_sections=all_sections,
-        mapped_sections=mapped_sections
-    )
+        try:
+            # Sla application_scope op als die is gewijzigd
+            if new_scope:
+                db.execute(
+                    'UPDATE criteria SET application_scope = ? WHERE id = ?',
+                    (new_scope, id)
+                )
 
+            # Verwijder bestaande sectie-mappings
+            db.execute('DELETE FROM criteria_section_mappings WHERE criteria_id = ?', (id,))
 
-# ================================================================
-# Section Management Routes 
-# ================================================================
-@app.route('/sections')
-def list_sections():
-    """Overzicht van alle secties."""
-    print("=== DEBUG: list_sections called ===")
-    db = get_db() # Gebruik db in plaats van conn
-    sections = db.execute('''
-        SELECT s.* FROM sections s ORDER BY s.order_index, s.name
+            # Voeg geselecteerde (inclusie) secties toe
+            for section_id in selected_sections:
+                db.execute(
+                    'INSERT INTO criteria_section_mappings (criteria_id, section_id, is_excluded) VALUES (?, ?, 0)',
+                    (id, section_id)
+                )
+
+            # Voeg uitgesloten secties toe met is_excluded=1
+            for section_id in excluded_sections:
+                if section_id not in selected_sections:  # voorkom conflict
+                    db.execute(
+                        'INSERT INTO criteria_section_mappings (criteria_id, section_id, is_excluded) VALUES (?, ?, 1)',
+                        (id, section_id)
+                    )
+
+            db.commit()
+            flash('Sectie mappings en toepassingsgebied succesvol bijgewerkt!', 'success')
+            return redirect(url_for('list_criteria'))
+        except Exception as e:
+            flash(f'Fout bij mappen: {e}', 'danger')
+            traceback.print_exc()
+    
+    # Haal ALLE secties op (sections tabel heeft geen document_type_id;
+    # de koppeling loopt via de junction-tabel document_type_sections)
+    all_sections = db.execute('''
+        SELECT s.*, p.name AS parent_name
+        FROM sections s
+        LEFT JOIN sections p ON s.parent_id = p.id
+        ORDER BY s.order_index, s.level, s.name
     ''').fetchall()
     
-    print(f"DEBUG: Retrieved {len(sections)} sections from database:")
-    for section in sections:
-        print(f"  - ID: {section['id']}, Name: '{section['name']}', Identifier: '{section['identifier']}', Order: {section['order_index']}")
+    # Haal huidige mappings op inclusief is_excluded status
+    current_mappings = db.execute(
+        'SELECT section_id, is_excluded FROM criteria_section_mappings WHERE criteria_id = ?',
+        (id,)
+    ).fetchall()
+
+    # Maak een dictionary van mapped sections voor de template
+    mapped_sections = {}
+    for m in current_mappings:
+        mapped_sections[m['section_id']] = {'is_excluded': bool(m['is_excluded'])}
     
-    print("=== DEBUG: list_sections completed ===")
+    return render_template('criteria_section_mapping.html', 
+                           criterion=criterion,
+                           all_sections=all_sections,
+                           mapped_sections=mapped_sections)
+
+# ================================================================
+# Secties Management Routes
+# ================================================================
+
+@app.route('/sections')
+@admin_required
+def list_sections():
+    """Overzichtspagina van alle secties."""
+    db = get_db()
+    sections = db.execute('''
+        SELECT s.*, p.name AS parent_name
+        FROM sections s
+        LEFT JOIN sections p ON s.parent_id = p.id
+        ORDER BY s.order_index, s.level, s.name
+    ''').fetchall()
     return render_template('sections_list.html', sections=sections)
 
 @app.route('/sections/add', methods=('GET', 'POST'))
+@admin_required
 def add_section():
-    """Formulier om een nieuwe sectie toe te voegen."""
-    db = get_db() 
-    document_types = db.execute('SELECT id, name FROM document_types').fetchall()
-    # all_sections niet nodig voor toevoegen van een nieuwe sectie in deze setup
-    all_sections = [] 
-
+    """Route voor het toevoegen van een nieuwe sectie."""
+    db = get_db()
+    
     if request.method == 'POST':
         name = request.form['name']
         identifier = request.form['identifier']
-        is_required = 1 if request.form.get('is_required') == 'on' else 0
-        order_index = request.form.get('order_index', type=int)
-        level = request.form.get('level', type=int)
+        level = request.form.get('level', 1)
+        order_index = request.form.get('order_index', 0)
+        document_type_id = request.form.get('document_type_id')
+        alt_names_raw = request.form.get('alternative_names', '').strip()
+        # Converteer komma-gescheiden invoer naar JSON array
+        alt_names_list = [n.strip() for n in alt_names_raw.split(',') if n.strip()]
+        alternative_names_json = json.dumps(alt_names_list)
 
         if not name or not identifier:
             flash('Naam en identifier zijn verplicht!', 'danger')
         else:
             try:
-                db.execute(
-                    'INSERT INTO sections (name, identifier, is_required, order_index, level) VALUES (?, ?, ?, ?, ?)',
-                    (name, identifier, is_required, order_index, level)
+                cursor = db.cursor()
+                cursor.execute(
+                    'INSERT INTO sections (name, identifier, level, order_index, document_type_id, alternative_names) VALUES (?, ?, ?, ?, ?, ?)',
+                    (name, identifier, level, order_index, document_type_id, alternative_names_json)
                 )
                 db.commit()
                 flash('Sectie succesvol toegevoegd!', 'success')
                 return redirect(url_for('list_sections'))
-            except sqlite3.IntegrityError:
-                flash('Fout bij toevoegen: een sectie met deze identifier bestaat al.', 'danger')
             except Exception as e:
-                flash(f'Er is een onverwachte fout opgetreden: {e}', 'danger')
-    
-    return render_template('add_section.html', 
-                           document_types=document_types, 
-                           all_sections=all_sections, # Dit kan leeg blijven of verwijderd worden uit template
-                           form_data=request.form)
-
-@app.route('/sections/edit/<int:id>', methods=('GET', 'POST'))
-def edit_section(id):
-    """Formulier om een bestaande sectie te bewerken."""
-    db = get_db() 
-    section = db.execute('SELECT * FROM sections WHERE id = ?', (id,)).fetchone()
-    if section is None:
-        abort(404)
+                flash(f'Fout bij toevoegen: {e}', 'danger')
+                traceback.print_exc()
 
     document_types = db.execute('SELECT id, name FROM document_types').fetchall()
-    all_sections = [] 
+    form_data = request.form if request.method == 'POST' else {}
+    return render_template('add_section.html', document_types=document_types, form_data=form_data)
 
+@app.route('/sections/edit/<int:id>', methods=('GET', 'POST'))
+@admin_required
+def edit_section(id):
+    """Route voor het bewerken van een sectie."""
+    db = get_db()
+    section = db.execute('SELECT * FROM sections WHERE id = ?', (id,)).fetchone()
+    
+    if section is None:
+        flash('Sectie niet gevonden.', 'danger')
+        return redirect(url_for('list_sections'))
+    
     if request.method == 'POST':
         name = request.form['name']
         identifier = request.form['identifier']
-        is_required = 1 if request.form.get('is_required') == 'on' else 0
-        order_index = request.form.get('order_index', type=int)
-        level = request.form.get('level', type=int)
+        level = request.form.get('level', 1)
+        order_index = request.form.get('order_index', 0)
+        document_type_id = request.form.get('document_type_id')
+        alt_names_raw = request.form.get('alternative_names', '').strip()
+        # Converteer komma-gescheiden invoer naar JSON array
+        alt_names_list = [n.strip() for n in alt_names_raw.split(',') if n.strip()]
+        alternative_names_json = json.dumps(alt_names_list)
 
         if not name or not identifier:
             flash('Naam en identifier zijn verplicht!', 'danger')
         else:
             try:
                 db.execute(
-                    'UPDATE sections SET name = ?, identifier = ?, is_required = ?, order_index = ?, level = ? WHERE id = ?',
-                    (name, identifier, is_required, order_index, level, id)
+                    'UPDATE sections SET name = ?, identifier = ?, level = ?, order_index = ?, document_type_id = ?, alternative_names = ? WHERE id = ?',
+                    (name, identifier, level, order_index, document_type_id, alternative_names_json, id)
                 )
                 db.commit()
                 flash('Sectie succesvol bijgewerkt!', 'success')
                 return redirect(url_for('list_sections'))
-            except sqlite3.IntegrityError:
-                flash('Fout bij bijwerken: een sectie met deze identifier bestaat al.', 'danger')
             except Exception as e:
-                flash(f'Er is een onverwachte fout opgetreden: {e}', 'danger')
-    
-    return render_template('edit_section.html', 
-                           section=section, 
-                           document_types=document_types, 
-                           all_sections=all_sections, # Dit kan leeg blijven of verwijderd worden uit template
-                           form_data=request.form)
+                flash(f'Fout bij bijwerken: {e}', 'danger')
+                traceback.print_exc()
+
+    document_types = db.execute('SELECT id, name FROM document_types').fetchall()
+    form_data = request.form if request.method == 'POST' else {}
+    # Converteer JSON naar komma-gescheiden string voor weergave in het formulier
+    try:
+        existing_alt = json.loads(section['alternative_names'] or '[]')
+        alt_names_display = ', '.join(existing_alt)
+    except (json.JSONDecodeError, TypeError):
+        alt_names_display = ''
+    return render_template('edit_section.html',
+                           section=section,
+                           document_types=document_types,
+                           form_data=form_data,
+                           alt_names_display=alt_names_display)
 
 @app.route('/sections/delete/<int:id>', methods=('POST',))
+@admin_required
 def delete_section(id):
-    """Verwijder een sectie."""
-    print(f"=== DEBUG: Delete section called with ID: {id} ===")
-    db = get_db() 
+    """Route voor het verwijderen van een sectie."""
+    db = get_db()
+    section = db.execute('SELECT * FROM sections WHERE id = ?', (id,)).fetchone()
     
-    # Debug: Check welke sectie we gaan verwijderen
-    section_info = db.execute('SELECT id, name, identifier FROM sections WHERE id = ?', (id,)).fetchone()
-    if section_info:
-        print(f"DEBUG: Found section to delete: ID={section_info['id']}, Name='{section_info['name']}', Identifier='{section_info['identifier']}'")
+    if section is None:
+        flash('Sectie niet gevonden.', 'danger')
     else:
-        print(f"DEBUG: Section with ID {id} not found!")
-        flash(f'Sectie met ID {id} niet gevonden!', 'danger')
-        return redirect(url_for('list_sections'))
-    
-    try:
-        feedback_count = db.execute('SELECT COUNT(*) FROM feedback_items WHERE section_id = ?', (id,)).fetchone()[0]
-        criteria_mapping_count = db.execute('SELECT COUNT(*) FROM criteria_section_mappings WHERE section_id = ?', (id,)).fetchone()[0]
-        
-        print(f"DEBUG: Dependencies - feedback_count: {feedback_count}, criteria_mapping_count: {criteria_mapping_count}")
-
-        if feedback_count > 0 or criteria_mapping_count > 0:
-            print(f"DEBUG: Cannot delete - dependencies found")
-            flash(f'Kan sectie niet verwijderen: {feedback_count} feedback items en {criteria_mapping_count} criterium mappings gekoppeld. Verwijder eerst de gekoppelde items.', 'danger')
-        else:
-            print(f"DEBUG: Deleting section from database...")
-            result = db.execute('DELETE FROM sections WHERE id = ?', (id,))
-            print(f"DEBUG: DELETE query affected {result.rowcount} rows")
+        try:
+            db.execute('DELETE FROM sections WHERE id = ?', (id,))
             db.commit()
-            print(f"DEBUG: Database committed successfully")
-            
-            # Verify deletion
-            check_section = db.execute('SELECT id FROM sections WHERE id = ?', (id,)).fetchone()
-            if check_section:
-                print(f"DEBUG: ERROR - Section still exists after deletion!")
-                flash('Fout: Sectie bestaat nog steeds na verwijdering!', 'danger')
-            else:
-                print(f"DEBUG: SUCCESS - Section successfully deleted")
-                flash('Sectie succesvol verwijderd!', 'success')
-    except sqlite3.Error as e:
-        print(f"DEBUG: SQLite error: {e}")
-        flash(f'Fout bij verwijderen van sectie: {e}', 'danger')
-    except Exception as e:
-        print(f"DEBUG: Unexpected error: {e}")
-        flash(f'Onverwachte fout bij verwijderen van sectie: {e}', 'danger')
+            flash('Sectie succesvol verwijderd!', 'success')
+        except Exception as e:
+            flash(f'Fout bij verwijderen: {e}', 'danger')
+            traceback.print_exc()
     
-    print(f"=== DEBUG: Delete section function completed ===")
     return redirect(url_for('list_sections'))
 
 # ================================================================
-# Document Type Management Routes 
+# Document Types Management Routes
 # ================================================================
+
 @app.route('/document_types')
+@admin_required
 def list_document_types():
-    """Overzicht van alle documenttypes."""
+    """Overzichtspagina van alle document types."""
     db = get_db()
     document_types = db.execute('SELECT * FROM document_types ORDER BY name').fetchall()
     return render_template('document_types_list.html', document_types=document_types)
 
 @app.route('/document_types/add', methods=('GET', 'POST'))
+@admin_required
 def add_document_type():
-    """Formulier om een nieuw documenttype toe te voegen."""
+    """Route voor het toevoegen van een nieuw document type."""
     db = get_db()
-    try:
-        organizations = db.execute('SELECT id, name FROM organizations').fetchall()
-    except sqlite3.OperationalError:
-        organizations = [] 
-
+    
     if request.method == 'POST':
         name = request.form['name']
         identifier = request.form['identifier']
-
+        description = request.form.get('description', '')
+        
         if not name or not identifier:
             flash('Naam en identifier zijn verplicht!', 'danger')
         else:
             try:
-                db.execute('INSERT INTO document_types (name, identifier) VALUES (?, ?)', (name, identifier))
+                cursor = db.cursor()
+                cursor.execute(
+                    'INSERT INTO document_types (name, identifier, description) VALUES (?, ?, ?)',
+                    (name, identifier, description)
+                )
                 db.commit()
-                flash('Documenttype succesvol toegevoegd!', 'success')
+                flash('Document type succesvol toegevoegd!', 'success')
                 return redirect(url_for('list_document_types'))
-            except sqlite3.IntegrityError:
-                flash('Een documenttype met deze naam of identifier bestaat al.', 'danger')
             except Exception as e:
-                flash(f'Er is een onverwachte fout opgetreden: {e}', 'danger')
-    
-    return render_template('add_document_type.html', organizations=organizations, form_data=request.form)
+                flash(f'Fout bij toevoegen: {e}', 'danger')
+                traceback.print_exc()
+
+    return render_template('add_document_type.html')
 
 @app.route('/document_types/edit/<int:id>', methods=('GET', 'POST'))
+@admin_required
 def edit_document_type(id):
-    """Formulier om een bestaand documenttype te bewerken."""
+    """Route voor het bewerken van een document type."""
     db = get_db()
-    doc_type = db.execute('SELECT * FROM document_types WHERE id = ?', (id,)).fetchone()
-    if doc_type is None:
-        abort(404)
-
-    try:
-        organizations = db.execute('SELECT id, name FROM organizations').fetchall()
-    except sqlite3.OperationalError:
-        organizations = [] 
-
+    document_type = db.execute('SELECT * FROM document_types WHERE id = ?', (id,)).fetchone()
+    
+    if document_type is None:
+        flash('Document type niet gevonden.', 'danger')
+        return redirect(url_for('list_document_types'))
+    
     if request.method == 'POST':
         name = request.form['name']
         identifier = request.form['identifier']
-
+        # description = request.form.get('description', '')  # Verwijderd
+        
         if not name or not identifier:
             flash('Naam en identifier zijn verplicht!', 'danger')
         else:
             try:
-                db.execute('UPDATE document_types SET name = ?, identifier = ? WHERE id = ?', (name, identifier, id))
+                db.execute(
+                    'UPDATE document_types SET name = ?, identifier = ? WHERE id = ?',
+                    (name, identifier, id)
+                )
                 db.commit()
-                flash('Documenttype succesvol bijgewerkt!', 'success')
+                flash('Document type succesvol bijgewerkt!', 'success')
                 return redirect(url_for('list_document_types'))
-            except sqlite3.IntegrityError:
-                flash('Een documenttype met deze naam of identifier bestaat al.', 'danger')
             except Exception as e:
-                flash(f'Er is een onverwachte fout opgetreden: {e}', 'danger')
-    
-    return render_template('edit_document_type.html', doc_type=doc_type, organizations=organizations, form_data=request.form)
+                flash(f'Fout bij bijwerken: {e}', 'danger')
+                traceback.print_exc()
+
+    return render_template('edit_document_type.html', document_type=document_type)
 
 @app.route('/document_types/delete/<int:id>', methods=('POST',))
+@admin_required
 def delete_document_type(id):
-    """Verwijder een documenttype."""
+    """Route voor het verwijderen van een document type."""
     db = get_db()
-    try:
-        # Check op afhankelijke records (als organization_id een FK is in document_types)
-        # In de huidige db_utils is organization_id GEEN FK in document_types
-        # Secties zijn ook niet direct gekoppeld aan document_types via een mappingtabel in de huidige db_utils
-        # Dus we controleren alleen documents en criteria mappings
-
-        documents_count = db.execute('SELECT COUNT(*) FROM documents WHERE document_type_id = ?', (id,)).fetchone()[0]
-        criteria_mapping_count = db.execute('SELECT COUNT(*) FROM document_type_criteria_mappings WHERE document_type_id = ?', (id,)).fetchone()[0]
-        
-        if documents_count > 0 or criteria_mapping_count > 0:
-            flash(f'Kan documenttype niet verwijderen: {documents_count} gekoppelde documenten en {criteria_mapping_count} criteria gevonden. Verwijder eerst de gekoppelde items.', 'danger')
-        else:
+    document_type = db.execute('SELECT * FROM document_types WHERE id = ?', (id,)).fetchone()
+    
+    if document_type is None:
+        flash('Document type niet gevonden.', 'danger')
+    else:
+        try:
             db.execute('DELETE FROM document_types WHERE id = ?', (id,))
             db.commit()
-            flash('Documenttype succesvol verwijderd!', 'success')
-    except sqlite3.Error as e:
-        flash(f'Fout bij verwijderen van documenttype: {e}', 'danger')
+            flash('Document type succesvol verwijderd!', 'success')
+        except Exception as e:
+            flash(f'Fout bij verwijderen: {e}', 'danger')
+            traceback.print_exc()
+    
     return redirect(url_for('list_document_types'))
 
 # ================================================================
-# Organisatie Management Routes 
+# Organisaties Management Routes
 # ================================================================
+
 @app.route('/organizations')
+@admin_required
 def list_organizations():
-    """Overzicht van alle organisaties."""
+    """Overzichtspagina van alle organisaties."""
     db = get_db()
-    try:
-        organizations = db.execute('SELECT * FROM organizations ORDER BY name').fetchall()
-    except sqlite3.OperationalError:
-        organizations = [] 
-        flash('De "organizations" tabel bestaat niet in de database. Deze route zal niet functioneren.', 'info')
+    organizations = db.execute('SELECT * FROM organizations ORDER BY name').fetchall()
     return render_template('organizations_list.html', organizations=organizations)
 
 @app.route('/organizations/add', methods=('GET', 'POST'))
+@admin_required
 def add_organization():
-    """Formulier om een nieuwe organisatie toe te voegen."""
+    """Route voor het toevoegen van een nieuwe organisatie."""
     db = get_db()
-    if request.method == 'POST':
-        name = request.form['name']
-        description = request.form.get('description')
-
-        if not name:
-            flash('Naam van organisatie is verplicht!', 'danger')
-        else:
-            try:
-                db.execute('INSERT INTO organizations (name, description) VALUES (?, ?)', (name, description))
-                db.commit()
-                flash('Organisatie succesvol toegevoegd!', 'success')
-                return redirect(url_for('list_organizations'))
-            except sqlite3.IntegrityError:
-                flash('Een organisatie met deze naam bestaat al.', 'danger')
-            except Exception as e:
-                flash(f'Er is een onverwachte fout opgetreden: {e}', 'danger')
-    
-    return render_template('add_organization.html', form_data=request.form)
-
-@app.route('/organizations/edit/<int:id>', methods=('GET', 'POST'))
-def edit_organization(id):
-    """Formulier om een bestaande organisatie te bewerken."""
-    db = get_db()
-    try:
-        organization = db.execute('SELECT * FROM organizations WHERE id = ?', (id,)).fetchone()
-    except sqlite3.OperationalError:
-        flash('De "organizations" tabel bestaat niet.', 'danger')
-        return redirect(url_for('list_organizations'))
-
-    if organization is None:
-        abort(404)
-
-    if request.method == 'POST':
-        name = request.form['name']
-        description = request.form.get('description')
-
-        if not name:
-            flash('Naam van organisatie is verplicht!', 'danger')
-        else:
-            try:
-                db.execute('UPDATE organizations SET name = ?, description = ? WHERE id = ?', (name, description, id))
-                db.commit()
-                flash('Organisatie succesvol bijgewerkt!', 'success')
-                return redirect(url_for('list_organizations'))
-            except sqlite3.IntegrityError:
-                flash('Een organisatie met deze naam bestaat al.', 'danger')
-            except Exception as e:
-                flash(f'Er is een onverwachte fout opgetreden: {e}', 'danger')
-    
-    return render_template('edit_organization.html', organization=organization, form_data=request.form)
-
-@app.route('/organizations/delete/<int:id>', methods=('POST',))
-def delete_organization(id):
-    """Verwijder een organisatie."""
-    db = get_db()
-    try:
-        # Check op afhankelijke records (documents)
-        documents_count = db.execute('SELECT COUNT(*) FROM documents WHERE organization_id = ?', (id,)).fetchone()[0]
-        
-        if documents_count > 0:
-            flash(f'Kan organisatie niet verwijderen: {documents_count} gekoppelde documenten gevonden. Verwijder eerst de gekoppelde items.', 'danger')
-        else:
-            db.execute('DELETE FROM organizations WHERE id = ?', (id,))
-            db.commit()
-            flash('Organisatie succesvol verwijderd!', 'success')
-    except sqlite3.OperationalError:
-        flash('De "organizations" tabel bestaat niet.', 'danger')
-    except sqlite3.Error as e:
-        flash(f'Fout bij verwijderen van organisatie: {e}', 'danger')
-    return redirect(url_for('list_organizations'))
-
-# ================================================================
-# Nieuwe Document Type Management Routes (per organisatie)
-# ================================================================
-
-@app.route('/document_types/organization/<int:org_id>')
-def list_organization_document_types(org_id):
-    """Overzicht van document types voor een specifieke organisatie."""
-    db = get_db()
-    
-    # Haal organisatie op
-    organization = db.execute('SELECT * FROM organizations WHERE id = ?', (org_id,)).fetchone()
-    if not organization:
-        flash('Organisatie niet gevonden.', 'danger')
-        return redirect(url_for('list_organizations'))
-    
-    # Haal document types op voor deze organisatie
-    document_types = db.execute('''
-        SELECT dt.*, COUNT(d.id) as document_count
-        FROM document_types dt
-        LEFT JOIN documents d ON dt.id = d.document_type_id
-        WHERE dt.organization_id = ? OR dt.organization_id IS NULL
-        GROUP BY dt.id
-        ORDER BY dt.name
-    ''', (org_id,)).fetchall()
-    
-    return render_template('organization_document_types.html', 
-                         organization=organization, 
-                         document_types=document_types)
-
-@app.route('/document_types/organization/<int:org_id>/add', methods=('GET', 'POST'))
-def add_organization_document_type(org_id):
-    """Voeg een nieuw document type toe voor een organisatie."""
-    db = get_db()
-    
-    # Haal organisatie op
-    organization = db.execute('SELECT * FROM organizations WHERE id = ?', (org_id,)).fetchone()
-    if not organization:
-        flash('Organisatie niet gevonden.', 'danger')
-        return redirect(url_for('list_organizations'))
     
     if request.method == 'POST':
         name = request.form['name']
-        identifier = request.form.get('identifier', '').lower().replace(' ', '_')
         description = request.form.get('description', '')
         
         if not name:
@@ -1123,315 +1089,481 @@ def add_organization_document_type(org_id):
             try:
                 cursor = db.cursor()
                 cursor.execute(
+                    'INSERT INTO organizations (name, description) VALUES (?, ?)',
+                    (name, description)
+                )
+                db.commit()
+                flash('Organisatie succesvol toegevoegd!', 'success')
+                return redirect(url_for('list_organizations'))
+            except Exception as e:
+                flash(f'Fout bij toevoegen: {e}', 'danger')
+                traceback.print_exc()
+
+    return render_template('add_organization.html')
+
+@app.route('/organizations/edit/<int:id>', methods=('GET', 'POST'))
+@admin_required
+def edit_organization(id):
+    """Route voor het bewerken van een organisatie."""
+    db = get_db()
+    organization = db.execute('SELECT * FROM organizations WHERE id = ?', (id,)).fetchone()
+    
+    if organization is None:
+        flash('Organisatie niet gevonden.', 'danger')
+        return redirect(url_for('list_organizations'))
+    
+    if request.method == 'POST':
+        name = request.form['name']
+        description = request.form.get('description', '')
+        
+        if not name:
+            flash('Naam is verplicht!', 'danger')
+        else:
+            try:
+                db.execute(
+                    'UPDATE organizations SET name = ?, description = ? WHERE id = ?',
+                    (name, description, id)
+                )
+                db.commit()
+                flash('Organisatie succesvol bijgewerkt!', 'success')
+                return redirect(url_for('list_organizations'))
+            except Exception as e:
+                flash(f'Fout bij bijwerken: {e}', 'danger')
+                traceback.print_exc()
+
+    return render_template('edit_organization.html', organization=organization)
+
+@app.route('/organizations/delete/<int:id>', methods=('POST',))
+@admin_required
+def delete_organization(id):
+    """Route voor het verwijderen van een organisatie."""
+    db = get_db()
+    organization = db.execute('SELECT * FROM organizations WHERE id = ?', (id,)).fetchone()
+    
+    if organization is None:
+        flash('Organisatie niet gevonden.', 'danger')
+    else:
+        try:
+            db.execute('DELETE FROM organizations WHERE id = ?', (id,))
+            db.commit()
+            flash('Organisatie succesvol verwijderd!', 'success')
+        except Exception as e:
+            flash(f'Fout bij verwijderen: {e}', 'danger')
+            traceback.print_exc()
+    
+    return redirect(url_for('list_organizations'))
+
+# ================================================================
+# Geavanceerde Routes (uit main_backup.py)
+# ================================================================
+
+@app.route('/document_types/organization/<int:org_id>')
+@admin_required
+def list_organization_document_types(org_id):
+    """Toon document types voor een specifieke organisatie."""
+    db = get_db()
+    organization = db.execute('SELECT * FROM organizations WHERE id = ?', (org_id,)).fetchone()
+    if organization is None:
+        flash('Organisatie niet gevonden.', 'danger')
+        return redirect(url_for('list_organizations'))
+    
+    document_types = db.execute('''
+        SELECT dt.*, COUNT(s.id) as section_count
+        FROM document_types dt
+        LEFT JOIN sections s ON dt.id = s.document_type_id
+        WHERE dt.organization_id = ?
+        GROUP BY dt.id
+        ORDER BY dt.name
+    ''', (org_id,)).fetchall()
+    
+    return render_template('organization_document_types.html', 
+                           organization=organization,
+                           document_types=document_types)
+
+@app.route('/document_types/organization/<int:org_id>/add', methods=('GET', 'POST'))
+@admin_required
+def add_organization_document_type(org_id):
+    """Voeg document type toe voor een specifieke organisatie."""
+    db = get_db()
+    organization = db.execute('SELECT * FROM organizations WHERE id = ?', (org_id,)).fetchone()
+    if organization is None:
+        flash('Organisatie niet gevonden.', 'danger')
+        return redirect(url_for('list_organizations'))
+    
+    if request.method == 'POST':
+        name = request.form['name']
+        identifier = request.form['identifier']
+        description = request.form.get('description', '')
+        
+        if not name or not identifier:
+            flash('Naam en identifier zijn verplicht!', 'danger')
+        else:
+            try:
+                cursor = db.cursor()
+                cursor.execute(
                     'INSERT INTO document_types (name, identifier, description, organization_id) VALUES (?, ?, ?, ?)',
                     (name, identifier, description, org_id)
                 )
-                document_type_id = cursor.lastrowid
                 db.commit()
-                
                 flash('Document type succesvol toegevoegd!', 'success')
-                return redirect(url_for('manage_document_type_sections', 
-                                      org_id=org_id, 
-                                      doc_type_id=document_type_id))
-            except sqlite3.IntegrityError:
-                flash('Een document type met deze naam bestaat al.', 'danger')
+                return redirect(url_for('list_organization_document_types', org_id=org_id))
             except Exception as e:
                 flash(f'Fout bij toevoegen: {e}', 'danger')
-    
+                traceback.print_exc()
+
     return render_template('add_organization_document_type.html', organization=organization)
 
 @app.route('/document_types/<int:doc_type_id>/sections/manage')
 def manage_document_type_sections(doc_type_id):
     """Beheer secties voor een document type."""
     db = get_db()
-    
-    # Haal document type op
     document_type = db.execute('SELECT * FROM document_types WHERE id = ?', (doc_type_id,)).fetchone()
-    if not document_type:
+    if document_type is None:
         flash('Document type niet gevonden.', 'danger')
         return redirect(url_for('list_document_types'))
     
-    # Haal organisatie op
-    organization = db.execute('SELECT * FROM organizations WHERE id = ?', (document_type['organization_id'],)).fetchone()
-    
-    # Haal gekoppelde secties op
     sections = db.execute('''
-        SELECT s.*, dts.is_required, dts.order_index
+        SELECT s.*, CASE WHEN dts.section_id IS NOT NULL THEN 1 ELSE 0 END as is_assigned
         FROM sections s
-        JOIN document_type_sections dts ON s.id = dts.section_id
-        WHERE dts.document_type_id = ?
-        ORDER BY dts.order_index
-    ''', (doc_type_id,)).fetchall()
-    
-    # Haal beschikbare secties op (nog niet gekoppeld)
-    available_sections = db.execute('''
-        SELECT s.* FROM sections s
-        WHERE s.id NOT IN (
-            SELECT section_id FROM document_type_sections WHERE document_type_id = ?
-        )
+        LEFT JOIN document_type_sections dts ON s.id = dts.section_id AND dts.document_type_id = ?
         ORDER BY s.name
     ''', (doc_type_id,)).fetchall()
     
-    return render_template('manage_document_type_sections.html',
-                         document_type=document_type,
-                         organization=organization,
-                         sections=sections,
-                         available_sections=available_sections)
+    return render_template('manage_document_type_sections.html', 
+                           document_type=document_type,
+                           sections=sections)
 
 @app.route('/document_types/<int:doc_type_id>/sections/add', methods=('POST',))
 def add_section_to_document_type(doc_type_id):
-    """Voeg een sectie toe aan een document type."""
+    """Voeg sectie toe aan document type."""
     db = get_db()
-    
     section_id = request.form.get('section_id')
-    is_required = 1 if request.form.get('is_required') == 'on' else 0
-    order_index = request.form.get('order_index', 0)
     
     if not section_id:
         flash('Sectie is verplicht!', 'danger')
     else:
         try:
-            db.execute('''
-                INSERT INTO document_type_sections (document_type_id, section_id, is_required, order_index)
-                VALUES (?, ?, ?, ?)
-            ''', (doc_type_id, section_id, is_required, order_index))
+            db.execute(
+                'INSERT INTO document_type_sections (document_type_id, section_id) VALUES (?, ?)',
+                (doc_type_id, section_id)
+            )
             db.commit()
             flash('Sectie succesvol toegevoegd aan document type!', 'success')
-        except sqlite3.IntegrityError:
-            flash('Deze sectie is al gekoppeld aan dit document type.', 'danger')
         except Exception as e:
             flash(f'Fout bij toevoegen: {e}', 'danger')
+            traceback.print_exc()
     
     return redirect(url_for('manage_document_type_sections', doc_type_id=doc_type_id))
 
 @app.route('/document_types/<int:doc_type_id>/sections/<int:section_id>/remove', methods=('POST',))
 def remove_section_from_document_type(doc_type_id, section_id):
-    """Verwijder een sectie van een document type."""
+    """Verwijder sectie van document type."""
     db = get_db()
-    
     try:
-        db.execute('''
-            DELETE FROM document_type_sections 
-            WHERE document_type_id = ? AND section_id = ?
-        ''', (doc_type_id, section_id))
+        db.execute(
+            'DELETE FROM document_type_sections WHERE document_type_id = ? AND section_id = ?',
+            (doc_type_id, section_id)
+        )
         db.commit()
         flash('Sectie succesvol verwijderd van document type!', 'success')
     except Exception as e:
         flash(f'Fout bij verwijderen: {e}', 'danger')
+        traceback.print_exc()
     
     return redirect(url_for('manage_document_type_sections', doc_type_id=doc_type_id))
 
-# ================================================================
-# Nieuwe Criteria Management Routes
-# ================================================================
-
 @app.route('/criteria_templates')
+@admin_required
 def list_criteria_templates():
-    """Overzicht van beschikbare criteria templates."""
+    """Overzichtspagina van criteria templates."""
     db = get_db()
-    
-    templates = db.execute('''
-        SELECT ct.*, COUNT(ci.id) as usage_count
-        FROM criteria_templates ct
-        LEFT JOIN criteria_instances ci ON ct.id = ci.template_id
-        GROUP BY ct.id
-        ORDER BY ct.name
-    ''').fetchall()
-    
-    return render_template('criteria_templates.html', templates=templates)
+    templates = db.execute('SELECT * FROM criteria_templates ORDER BY name').fetchall()
+    return render_template('criteria_templates_list.html', templates=templates)
 
 @app.route('/criteria_templates/add', methods=('GET', 'POST'))
+@admin_required
 def add_criteria_template():
-    """Voeg een nieuw criteria template toe."""
+    """Route voor het toevoegen van een criteria template."""
     db = get_db()
     
     if request.method == 'POST':
         name = request.form['name']
         description = request.form.get('description', '')
-        rule_type = request.form.get('rule_type')
-        application_scope = request.form.get('application_scope')
-        severity = request.form.get('severity')
-        error_message = request.form.get('error_message', '')
-        fixed_feedback_text = request.form.get('fixed_feedback_text', '')
-        color = request.form.get('color', '#F94144')
-        is_global = 1 if request.form.get('is_global') == 'on' else 0
-        
-        if not name or not rule_type or not application_scope:
-            flash('Naam, regeltype en toepassingsgebied zijn verplicht!', 'danger')
-        else:
-            try:
-                db.execute('''
-                    INSERT INTO criteria_templates (
-                        name, description, rule_type, application_scope, severity,
-                        error_message, fixed_feedback_text, color, is_global
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (name, description, rule_type, application_scope, severity,
-                     error_message, fixed_feedback_text, color, is_global))
-                db.commit()
-                flash('Criteria template succesvol toegevoegd!', 'success')
-                return redirect(url_for('list_criteria_templates'))
-            except sqlite3.IntegrityError:
-                flash('Een template met deze naam bestaat al.', 'danger')
-            except Exception as e:
-                flash(f'Fout bij toevoegen: {e}', 'danger')
-    
-    return render_template('add_criteria_template.html')
-
-@app.route('/document_types/<int:doc_type_id>/criteria')
-def list_document_type_criteria(doc_type_id):
-    """Overzicht van criteria voor een document type."""
-    db = get_db()
-    
-    # Haal document type op
-    document_type = db.execute('SELECT * FROM document_types WHERE id = ?', (doc_type_id,)).fetchone()
-    if not document_type:
-        flash('Document type niet gevonden.', 'danger')
-        return redirect(url_for('list_document_types'))
-    
-    # Haal organisatie op
-    organization = db.execute('SELECT * FROM organizations WHERE id = ?', (document_type['organization_id'],)).fetchone()
-    
-    # Haal criteria instances op
-    criteria_instances = db.execute('''
-        SELECT ci.*, ct.name as template_name, ct.description as template_description
-        FROM criteria_instances ci
-        LEFT JOIN criteria_templates ct ON ci.template_id = ct.id
-        WHERE ci.document_type_id = ?
-        ORDER BY ci.name
-    ''', (doc_type_id,)).fetchall()
-    
-    # Haal beschikbare templates op
-    available_templates = db.execute('''
-        SELECT * FROM criteria_templates 
-        WHERE is_global = 1 OR organization_id = ?
-        ORDER BY name
-    ''', (document_type['organization_id'],)).fetchall()
-    
-    return render_template('document_type_criteria.html',
-                         document_type=document_type,
-                         organization=organization,
-                         criteria_instances=criteria_instances,
-                         available_templates=available_templates)
-
-@app.route('/document_types/<int:doc_type_id>/criteria/add', methods=('GET', 'POST'))
-def add_criteria_to_document_type(doc_type_id):
-    """Voeg criteria toe aan een document type."""
-    db = get_db()
-    
-    # Haal document type op
-    document_type = db.execute('SELECT * FROM document_types WHERE id = ?', (doc_type_id,)).fetchone()
-    if not document_type:
-        flash('Document type niet gevonden.', 'danger')
-        return redirect(url_for('list_document_types'))
-    
-    # Haal beschikbare templates op
-    available_templates = db.execute('''
-        SELECT * FROM criteria_templates 
-        WHERE is_global = 1 OR organization_id = ?
-        ORDER BY name
-    ''', (document_type['organization_id'],)).fetchall()
-    
-    if request.method == 'POST':
-        template_id = request.form.get('template_id')
-        name = request.form['name']
-        description = request.form.get('description', '')
-        rule_type = request.form.get('rule_type')
-        application_scope = request.form.get('application_scope')
-        severity = request.form.get('severity')
-        error_message = request.form.get('error_message', '')
-        fixed_feedback_text = request.form.get('fixed_feedback_text', '')
-        color = request.form.get('color', '#F94144')
-        
-        if not name or not rule_type or not application_scope:
-            flash('Naam, regeltype en toepassingsgebied zijn verplicht!', 'danger')
-        else:
-            try:
-                cursor = db.cursor()
-                cursor.execute('''
-                    INSERT INTO criteria_instances (
-                        template_id, document_type_id, organization_id, name, description,
-                        rule_type, application_scope, severity, error_message, 
-                        fixed_feedback_text, color
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (template_id, doc_type_id, document_type['organization_id'], name, description,
-                     rule_type, application_scope, severity, error_message, fixed_feedback_text, color))
-                
-                criteria_instance_id = cursor.lastrowid
-                db.commit()
-                
-                flash('Criteria succesvol toegevoegd!', 'success')
-                return redirect(url_for('list_document_type_criteria', doc_type_id=doc_type_id))
-            except Exception as e:
-                flash(f'Fout bij toevoegen: {e}', 'danger')
-    
-    return render_template('add_criteria_to_document_type.html',
-                         document_type=document_type,
-                         available_templates=available_templates)
-
-@app.route('/criteria_instances/<int:instance_id>/edit', methods=('GET', 'POST'))
-def edit_criteria_instance(instance_id):
-    """Bewerk een criteria instance."""
-    db = get_db()
-    
-    # Haal criteria instance op
-    instance = db.execute('SELECT * FROM criteria_instances WHERE id = ?', (instance_id,)).fetchone()
-    if not instance:
-        flash('Criteria instance niet gevonden.', 'danger')
-        return redirect(url_for('list_document_types'))
-    
-    # Haal document type op
-    document_type = db.execute('SELECT * FROM document_types WHERE id = ?', (instance['document_type_id'],)).fetchone()
-    
-    if request.method == 'POST':
-        name = request.form['name']
-        description = request.form.get('description', '')
-        severity = request.form.get('severity')
-        error_message = request.form.get('error_message', '')
-        fixed_feedback_text = request.form.get('fixed_feedback_text', '')
-        color = request.form.get('color', '#F94144')
-        is_enabled = 1 if request.form.get('is_enabled') == 'on' else 0
         
         if not name:
             flash('Naam is verplicht!', 'danger')
         else:
             try:
-                db.execute('''
-                    UPDATE criteria_instances 
-                    SET name = ?, description = ?, severity = ?, error_message = ?,
-                        fixed_feedback_text = ?, color = ?, is_enabled = ?
-                    WHERE id = ?
-                ''', (name, description, severity, error_message, fixed_feedback_text, color, is_enabled, instance_id))
+                cursor = db.cursor()
+                cursor.execute(
+                    'INSERT INTO criteria_templates (name, description) VALUES (?, ?)',
+                    (name, description)
+                )
+                template_id = cursor.lastrowid
+                
+                # Voeg criteria toe aan template
+                criteria_ids = request.form.getlist('criteria_ids')
+                for criterion_id in criteria_ids:
+                    db.execute(
+                        'INSERT INTO criteria_template_items (template_id, criterion_id) VALUES (?, ?)',
+                        (template_id, criterion_id)
+                    )
+                
                 db.commit()
-                flash('Criteria succesvol bijgewerkt!', 'success')
-                return redirect(url_for('list_document_type_criteria', doc_type_id=instance['document_type_id']))
+                flash('Criteria template succesvol toegevoegd!', 'success')
+                return redirect(url_for('list_criteria_templates'))
             except Exception as e:
-                flash(f'Fout bij bijwerken: {e}', 'danger')
-    
-    return render_template('edit_criteria_instance.html', instance=instance, document_type=document_type)
+                flash(f'Fout bij toevoegen: {e}', 'danger')
+                traceback.print_exc()
 
-@app.route('/criteria_instances/<int:instance_id>/delete', methods=('POST',))
-def delete_criteria_instance(instance_id):
-    """Verwijder een criteria instance."""
+    criteria = db.execute('SELECT * FROM criteria ORDER BY name').fetchall()
+    return render_template('add_criteria_template.html', criteria=criteria)
+
+@app.route('/document_types/<int:doc_type_id>/criteria')
+@admin_required
+def list_document_type_criteria(doc_type_id):
+    """Toon criteria voor een specifiek document type."""
     db = get_db()
+    document_type = db.execute('SELECT * FROM document_types WHERE id = ?', (doc_type_id,)).fetchone()
+    if document_type is None:
+        flash('Document type niet gevonden.', 'danger')
+        return redirect(url_for('list_document_types'))
     
-    # Haal criteria instance op
-    instance = db.execute('SELECT * FROM criteria_instances WHERE id = ?', (instance_id,)).fetchone()
-    if not instance:
+    criteria_instances = db.execute('''
+        SELECT ci.*, c.name, c.description
+        FROM criteria_instances ci
+        JOIN criteria c ON ci.criterion_id = c.id
+        WHERE ci.document_type_id = ?
+        ORDER BY ci.order_index
+    ''', (doc_type_id,)).fetchall()
+    
+    return render_template('document_type_criteria.html', 
+                           document_type=document_type,
+                           criteria_instances=criteria_instances)
+
+@app.route('/document_types/<int:doc_type_id>/criteria/add', methods=('GET', 'POST'))
+@admin_required
+def add_criteria_to_document_type(doc_type_id):
+    """Voeg criteria toe aan document type."""
+    db = get_db()
+    document_type = db.execute('SELECT * FROM document_types WHERE id = ?', (doc_type_id,)).fetchone()
+    if document_type is None:
+        flash('Document type niet gevonden.', 'danger')
+        return redirect(url_for('list_document_types'))
+    
+    if request.method == 'POST':
+        criterion_id = request.form.get('criterion_id')
+        weight = request.form.get('weight', 1.0)
+        order_index = request.form.get('order_index', 0)
+        
+        if not criterion_id:
+            flash('Criterium is verplicht!', 'danger')
+        else:
+            try:
+                cursor = db.cursor()
+                cursor.execute(
+                    'INSERT INTO criteria_instances (criterion_id, document_type_id, weight, order_index) VALUES (?, ?, ?, ?)',
+                    (criterion_id, doc_type_id, weight, order_index)
+                )
+                db.commit()
+                flash('Criterium succesvol toegevoegd aan document type!', 'success')
+                return redirect(url_for('list_document_type_criteria', doc_type_id=doc_type_id))
+            except Exception as e:
+                flash(f'Fout bij toevoegen: {e}', 'danger')
+                traceback.print_exc()
+
+    criteria = db.execute('SELECT * FROM criteria ORDER BY name').fetchall()
+    return render_template('add_criteria_to_document_type.html', 
+                           document_type=document_type,
+                           criteria=criteria)
+
+@app.route('/criteria_instances/<int:instance_id>/edit', methods=('GET', 'POST'))
+@admin_required
+def edit_criteria_instance(instance_id):
+    """Bewerk criteria instance."""
+    db = get_db()
+    instance = db.execute('''
+        SELECT ci.*, c.name, c.description, dt.name as document_type_name
+        FROM criteria_instances ci
+        JOIN criteria c ON ci.criterion_id = c.id
+        JOIN document_types dt ON ci.document_type_id = dt.id
+        WHERE ci.id = ?
+    ''', (instance_id,)).fetchone()
+    
+    if instance is None:
         flash('Criteria instance niet gevonden.', 'danger')
         return redirect(url_for('list_document_types'))
     
-    try:
-        db.execute('DELETE FROM criteria_instances WHERE id = ?', (instance_id,))
-        db.commit()
-        flash('Criteria succesvol verwijderd!', 'success')
-    except Exception as e:
-        flash(f'Fout bij verwijderen: {e}', 'danger')
+    if request.method == 'POST':
+        weight = request.form.get('weight', 1.0)
+        order_index = request.form.get('order_index', 0)
+        
+        try:
+            db.execute(
+                'UPDATE criteria_instances SET weight = ?, order_index = ? WHERE id = ?',
+                (weight, order_index, instance_id)
+            )
+            db.commit()
+            flash('Criteria instance succesvol bijgewerkt!', 'success')
+            return redirect(url_for('list_document_type_criteria', doc_type_id=instance['document_type_id']))
+        except Exception as e:
+            flash(f'Fout bij bijwerken: {e}', 'danger')
+            traceback.print_exc()
+
+    return render_template('edit_criteria_instance.html', instance=instance)
+
+@app.route('/criteria_instances/<int:instance_id>/delete', methods=('POST',))
+@admin_required
+def delete_criteria_instance(instance_id):
+    """Verwijder criteria instance."""
+    db = get_db()
+    instance = db.execute('SELECT * FROM criteria_instances WHERE id = ?', (instance_id,)).fetchone()
     
-    return redirect(url_for('list_document_type_criteria', doc_type_id=instance['document_type_id']))
+    if instance is None:
+        flash('Criteria instance niet gevonden.', 'danger')
+    else:
+        try:
+            document_type_id = instance['document_type_id']
+            db.execute('DELETE FROM criteria_instances WHERE id = ?', (instance_id,))
+            db.commit()
+            flash('Criteria instance succesvol verwijderd!', 'success')
+            return redirect(url_for('list_document_type_criteria', doc_type_id=document_type_id))
+        except Exception as e:
+            flash(f'Fout bij verwijderen: {e}', 'danger')
+            traceback.print_exc()
+    
+    return redirect(url_for('list_document_types'))
 
 # ================================================================
-# Hoofduitvoerder voor de applicatie
+# Gebruikersbeheer Routes (alleen voor admins)
 # ================================================================
+
+@app.route('/users')
+@admin_required
+def list_users():
+    """Overzichtspagina van alle gebruikers."""
+    db = get_db()
+    users = db.execute('''
+        SELECT u.*, o.name AS org_name
+        FROM users u
+        LEFT JOIN organizations o ON u.organization_id = o.id
+        ORDER BY u.role DESC, u.username
+    ''').fetchall()
+    organizations = db.execute('SELECT id, name FROM organizations ORDER BY name').fetchall()
+    return render_template('users.html',
+                           users=users,
+                           organizations=organizations,
+                           show_form=False,
+                           edit_user=None,
+                           session_user_id=session.get('user_id'))
+
+
+@app.route('/users/add', methods=['GET', 'POST'])
+@admin_required
+def add_user():
+    """Gebruiker toevoegen."""
+    db = get_db()
+    organizations = db.execute('SELECT id, name FROM organizations ORDER BY name').fetchall()
+    if request.method == 'POST':
+        username  = request.form.get('username', '').strip()
+        password  = request.form.get('password', '')
+        role      = request.form.get('role', 'consumer')
+        full_name = request.form.get('full_name', '').strip()
+        org_id    = request.form.get('organization_id') or None
+        if not username or not password:
+            flash('Gebruikersnaam en wachtwoord zijn verplicht.', 'danger')
+        else:
+            try:
+                db.execute(
+                    'INSERT INTO users (username, password_hash, role, full_name, organization_id) VALUES (?,?,?,?,?)',
+                    (username, generate_password_hash(password), role, full_name or None, org_id)
+                )
+                db.commit()
+                flash(f'Gebruiker "{username}" succesvol aangemaakt.', 'success')
+                return redirect(url_for('list_users'))
+            except Exception as e:
+                flash(f'Fout: {e}', 'danger')
+    users = db.execute('''
+        SELECT u.*, o.name AS org_name FROM users u
+        LEFT JOIN organizations o ON u.organization_id = o.id ORDER BY u.role DESC, u.username
+    ''').fetchall()
+    return render_template('users.html', users=users, organizations=organizations,
+                           show_form=True, edit_user=None,
+                           session_user_id=session.get('user_id'))
+
+
+@app.route('/users/edit/<int:id>', methods=['GET', 'POST'])
+@admin_required
+def edit_user(id):
+    """Gebruiker bewerken."""
+    db = get_db()
+    user = db.execute('SELECT * FROM users WHERE id = ?', (id,)).fetchone()
+    if user is None:
+        flash('Gebruiker niet gevonden.', 'danger')
+        return redirect(url_for('list_users'))
+    organizations = db.execute('SELECT id, name FROM organizations ORDER BY name').fetchall()
+    if request.method == 'POST':
+        username  = request.form.get('username', '').strip()
+        password  = request.form.get('password', '')
+        role      = request.form.get('role', 'consumer')
+        full_name = request.form.get('full_name', '').strip()
+        org_id    = request.form.get('organization_id') or None
+        if not username:
+            flash('Gebruikersnaam is verplicht.', 'danger')
+        else:
+            try:
+                if password:
+                    db.execute(
+                        'UPDATE users SET username=?, password_hash=?, role=?, full_name=?, organization_id=? WHERE id=?',
+                        (username, generate_password_hash(password), role, full_name or None, org_id, id)
+                    )
+                else:
+                    db.execute(
+                        'UPDATE users SET username=?, role=?, full_name=?, organization_id=? WHERE id=?',
+                        (username, role, full_name or None, org_id, id)
+                    )
+                db.commit()
+                # Sessie bijwerken als de gebruiker zichzelf bewerkt
+                if id == session.get('user_id'):
+                    session['username']  = username
+                    session['user_role'] = role
+                flash(f'Gebruiker "{username}" bijgewerkt.', 'success')
+                return redirect(url_for('list_users'))
+            except Exception as e:
+                flash(f'Fout: {e}', 'danger')
+    users = db.execute('''
+        SELECT u.*, o.name AS org_name FROM users u
+        LEFT JOIN organizations o ON u.organization_id = o.id ORDER BY u.role DESC, u.username
+    ''').fetchall()
+    return render_template('users.html', users=users, organizations=organizations,
+                           show_form=True, edit_user=user,
+                           session_user_id=session.get('user_id'))
+
+
+@app.route('/users/delete/<int:id>', methods=['POST'])
+@admin_required
+def delete_user(id):
+    """Gebruiker verwijderen."""
+    if id == session.get('user_id'):
+        flash('Je kunt je eigen account niet verwijderen.', 'danger')
+        return redirect(url_for('list_users'))
+    db = get_db()
+    user = db.execute('SELECT * FROM users WHERE id = ?', (id,)).fetchone()
+    if user is None:
+        flash('Gebruiker niet gevonden.', 'danger')
+    else:
+        try:
+            db.execute('DELETE FROM users WHERE id = ?', (id,))
+            db.commit()
+            flash(f'Gebruiker "{user["username"]}" verwijderd.', 'success')
+        except Exception as e:
+            flash(f'Fout bij verwijderen: {e}', 'danger')
+    return redirect(url_for('list_users'))
+
+
+# ================================================================
+# App Startup
+# ================================================================
+
 if __name__ == '__main__':
-    print("Attempting to run Feedback Tool Flask App...")
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)

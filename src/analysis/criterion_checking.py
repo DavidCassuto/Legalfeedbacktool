@@ -327,42 +327,29 @@ def check_paragraph_word_count(criterion: dict, section: dict, db_connection: sq
     # Normaliseer line breaks naar Unix-stijl
     content = content.replace('\r\n', '\n').replace('\r', '\n')
 
-    def is_heading_like(line: str) -> bool:
-        """Detecteer koptekst-achtige regels die geen echte alinea zijn.
-        Kenmerken: kort (<= 10 woorden) én eindigt NIET op een zin-afsluitend leesteken."""
-        words = re.findall(r'\b\w+\b', line)
-        ends_with_sentence = bool(re.search(r'[.!?]$', line.strip()))
+    def is_heading_like(text: str) -> bool:
+        """Detecteer koptekst-achtige blokken die geen echte alinea zijn.
+        Kenmerken: kort (<= 10 woorden) EN eindigt NIET op een zin-afsluitend leesteken."""
+        words = re.findall(r'\b\w+\b', text)
+        ends_with_sentence = bool(re.search(r'[.!?]$', text.strip()))
         return len(words) <= 10 and not ends_with_sentence
 
-    # Split de content op regels en groepeer echte alinea's
-    # Regels die heading-achtig zijn fungeren als alinea-scheiding (worden overgeslagen)
+    # document_parsing.py slaat echte alinea's op met \n\n als scheidingsteken
+    # en koppen/lege regels met enkele \n — split hierop voor betrouwbare alinea-detectie
+    raw_blocks = re.split(r'\n\n+', content)
     paragraphs = []
-    current_para_lines = []
-
-    for line in content.split('\n'):
-        line_stripped = line.strip()
-
-        if not line_stripped:
-            # Lege regel = expliciete alinea-grens
-            if current_para_lines:
-                paragraphs.append(' '.join(current_para_lines))
-                current_para_lines = []
-        elif is_heading_like(line_stripped):
-            # Heading-achtige regel: sluit huidige alinea af en sla de regel zelf over
-            if current_para_lines:
-                paragraphs.append(' '.join(current_para_lines))
-                current_para_lines = []
-            # heading zelf niet toevoegen aan alinea's
-        else:
-            # Gewone inhoudelijke regel: toevoegen aan huidige alinea
-            current_para_lines.append(line_stripped)
-
-    # Vergeet de laatste alinea niet
-    if current_para_lines:
-        paragraphs.append(' '.join(current_para_lines))
+    for block in raw_blocks:
+        # Voeg eventuele interne regelombrekingen samen tot één alineatekst
+        lines = [l.strip() for l in block.split('\n') if l.strip()]
+        if not lines:
+            continue
+        para_text = ' '.join(lines)
+        # Sla heading-achtige blokken over (sectietitels, tussenkopjes)
+        if not is_heading_like(para_text):
+            paragraphs.append(para_text)
 
     # Voeg index toe aan elke alinea
-    paragraphs = [(p.strip(), idx) for idx, p in enumerate(paragraphs) if p.strip()]
+    paragraphs = [(p, idx) for idx, p in enumerate(paragraphs)]
 
     # Haal grenzen op
     expected_min_words = get_criterion_value(criterion, 'expected_value_min')

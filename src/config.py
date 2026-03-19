@@ -5,6 +5,10 @@ Bevat instellingen voor API keys en andere configuratie.
 
 import os
 from typing import Optional
+from dotenv import load_dotenv
+
+# Laad .env bestand vanuit de projectroot (één map boven src/)
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'), override=True)
 
 class Config:
     """Configuratie klasse voor de Feedback Tool."""

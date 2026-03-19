@@ -410,6 +410,24 @@ def check_paragraph_word_count(criterion: dict, section: dict, db_connection: sq
 # AI (LLM) beoordeling via Claude
 # ---------------------------------------------------------------------------
 
+# Taalrichtlijnen voor de AI: modern, helder Nederlands — geen archaïsch of Vlaams taalgebruik
+_NL_TAALGEBRUIK = """
+TAALGEBRUIK IN JE FEEDBACK — verplichte richtlijnen:
+Schrijf helder, modern Nederlands zoals dat in het Nederlandse hoger onderwijs gangbaar is.
+Vermijd de volgende woorden en vervang ze door het correcte alternatief:
+• "imprecies" → gebruik "onnauwkeurig"
+• "onsubstantieerd" → gebruik "onbeargumenteerd" of "zonder onderbouwing"
+• "concretelijk" → gebruik "concreet"
+• "citatie" → gebruik "citaat"
+• "malplaatje" → gebruik "sjabloon" of "generieke opzet"
+• "bevrijding", "bevrijd" in abstracte zin → vermijd; gebruik "ruimte bieden" of "de mogelijkheid geven"
+• Vermijd Belgisch-Nederlandse uitdrukkingen en archaïsch formeel Nederlands
+Schrijf verder:
+• Actief en direct: "De student onderbouwt de keuze niet" in plaats van "Er ontbreekt onderbouwing"
+• Juridisch jargon alleen waar dat inhoudelijk gepast en verwacht is
+• Zelfstandige naamwoorden met het juiste bijvoeglijk naamwoord: "kritieke tekortkoming" (niet "kritiek tekortkoming")
+""".strip()
+
 # Standaard AI-stijldetectie prompt-blok (optioneel meegestuurd per criterium)
 _AI_STYLE_PROMPT_NL = """
 AI-STIJLDETECTIE — let naast de bovenstaande criteria ook op deze kenmerken die wijzen op AI-gegenereerde tekst:
@@ -419,7 +437,7 @@ AI-STIJLDETECTIE — let naast de bovenstaande criteria ook op deze kenmerken di
 • Ontbreken van concrete voorbeelden, casuïstiek, namen of datums
 • Samenvattende stijl zonder eigen analytisch standpunt of argumentatie
 • Tautologieën en redundante formuleringen ("het is duidelijk dat dit duidelijk blijkt")
-• Overmatig gebruik van Nederlandse formele connectors: "tevens", "voorts", "derhalve", "in dit verband", "teneinde"
+• Overmatig gebruik van Nederlandse formele verbindingswoorden: "tevens", "voorts", "derhalve", "in dit verband", "teneinde"
 • Verwijzingen naar bronnen die niet concreet worden aangehaald of toegepast
 • Ontbreken van fouten, inconsistenties of persoonlijk perspectief — de tekst klinkt te perfect
 • Gebrek aan eigen juridische of vakinhoudelijke redenering: begrippen worden gedefinieerd maar niet toegepast
@@ -471,6 +489,8 @@ def check_llm_review(criterion: dict, section: dict, db_connection: sqlite3.Conn
 
     role_prompt        = (params.get('llm_role_prompt') or
                           'Je bent een kritische Nederlandse docent die studentenwerk beoordeelt.')
+    # Voeg altijd de taalrichtlijnen toe aan het systeemprompt
+    role_prompt = role_prompt.rstrip() + '\n\n' + _NL_TAALGEBRUIK
     criteria_prompt    = params.get('llm_criteria_prompt', '').strip()
     check_ai_style     = bool(params.get('llm_check_ai_style', False))
 

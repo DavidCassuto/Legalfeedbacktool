@@ -31,16 +31,24 @@ class AIFeedbackGenerator:
         genai.configure(api_key=self.api_key)
         self.model = genai.GenerativeModel('gemini-1.5-flash')
         
+        # Taalrichtlijnen voor alle feedback-prompts
+        self._taalrichtlijnen = (
+            "Schrijf helder, modern Nederlands. Gebruik 'onnauwkeurig' (niet 'imprecies'), "
+            "'onbeargumenteerd' (niet 'onsubstantieerd'), 'concreet' (niet 'concretelijk'), "
+            "'citaat' (niet 'citatie'), 'sjabloon' (niet 'malplaatje'). "
+            "Vermijd archaïsch formeel taalgebruik. Schrijf actief en direct."
+        )
+
         # Feedback templates voor verschillende secties
         self.feedback_templates = {
             'inleiding': {
-                'system_prompt': """Je bent een expert docent die feedback geeft op academische documenten. 
+                'system_prompt': """Je bent een expert docent die feedback geeft op academische documenten.
                 Analyseer de inleiding van het document en geef constructieve feedback op:
                 - Duidelijkheid en structuur
                 - Probleemstelling en context
                 - Leesbaarheid en flow
                 - Academische stijl
-                
+
                 Geef specifieke, praktische suggesties voor verbetering.""",
                 'max_tokens': 500
             },
@@ -170,6 +178,8 @@ class AIFeedbackGenerator:
                               document_type: str, system_prompt: str) -> str:
         """Bouw de prompt voor Gemini."""
         return f"""{system_prompt}
+
+{self._taalrichtlijnen}
 
 DOCUMENT TYPE: {document_type}
 SECTIE: {section_name}

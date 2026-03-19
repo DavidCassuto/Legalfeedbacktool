@@ -23,7 +23,9 @@ Register-ScheduledTask `
 
 Write-Host ""
 Write-Host "Dagelijkse backup ingesteld op elke ochtend om ${TijdstipUur}:00" -ForegroundColor Green
-Write-Host "Backups worden opgeslagen in: $env:USERPROFILE\OneDrive\DocuCheck_Backups\" -ForegroundColor Cyan
+Write-Host "Backups worden opgeslagen in:" -ForegroundColor Cyan
+Write-Host "  - OneDrive:     $env:USERPROFILE\OneDrive\DocuCheck_Backups\" -ForegroundColor Cyan
+Write-Host "  - Google Drive: G:\My Drive\DocuCheck_Backups\" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Direct testen:" -ForegroundColor Yellow
 Write-Host "  python backup_database.py" -ForegroundColor White

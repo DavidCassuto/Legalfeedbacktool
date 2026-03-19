@@ -1,12 +1,27 @@
 import sqlite3
 from datetime import datetime
 import json # Nodig voor JSON velden zoals alternative_names
+from werkzeug.security import generate_password_hash
 
 def initialize_db(conn: sqlite3.Connection):
     """
     Initialiseert de database: maakt tabellen aan en vult deze met initiële data.
     """
     cursor = conn.cursor()
+
+    # Tabel: users (beheerders en consumenten)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'consumer',  -- 'admin' of 'consumer'
+            full_name TEXT,
+            organization_id INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id)
+        )
+    """)
 
     # Tabel: document_types
     cursor.execute("""
@@ -103,6 +118,19 @@ def initialize_db(conn: sqlite3.Connection):
         )
     """)
 
+    # Tabel: document_type_sections (koppeling tussen document types en secties, many-to-many)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS document_type_sections (
+            document_type_id INTEGER,
+            section_id INTEGER,
+            is_required BOOLEAN DEFAULT 0,
+            order_index INTEGER DEFAULT 0,
+            PRIMARY KEY (document_type_id, section_id),
+            FOREIGN KEY (document_type_id) REFERENCES document_types(id),
+            FOREIGN KEY (section_id) REFERENCES sections(id)
+        )
+    """)
+
     # Tabel: feedback_items (opgeslagen feedback van analyses)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS feedback_items (
@@ -121,6 +149,20 @@ def initialize_db(conn: sqlite3.Connection):
             FOREIGN KEY (section_id) REFERENCES sections(id)
         )
     """)
+
+    # --- Migraties: kolommen toevoegen als ze nog niet bestaan ---
+    try:
+        cursor.execute("ALTER TABLE documents ADD COLUMN uploaded_by INTEGER REFERENCES users(id)")
+    except Exception:
+        pass  # Kolom bestaat al
+
+    # --- Standaard admin gebruiker aanmaken als er geen gebruikers zijn ---
+    cursor.execute("SELECT COUNT(*) FROM users")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, role, full_name) VALUES (?, ?, ?, ?)",
+            ('admin', generate_password_hash('admin'), 'admin', 'Beheerder')
+        )
 
     # --- Initiële Data Invoegen (Idempotent) ---
 
@@ -144,20 +186,20 @@ def initialize_db(conn: sqlite3.Connection):
     # BELANGRIJK: Secties - Nu met alle velden en hiërarchie
     # Zorg dat ALLE dictionaries de 'parent_id' key hebben, zelfs als deze None is.
     sections_initial_data = [
-        # Top-level sections (level 1)
-        {'name': 'Inleiding', 'identifier': 'inleiding', 'is_required': 0, 'parent_id': None, 'alternative_names': ['introductie', 'voorwoord'], 'order_index': 10, 'level': 1},
-        {'name': 'Probleemanalyse', 'identifier': 'probleemanalyse', 'is_required': 1, 'parent_id': None, 'alternative_names': ['probleemstelling', 'vraagstelling', 'het probleem'], 'order_index': 20, 'level': 1},
-        {'name': 'Doelstelling', 'identifier': 'doelstelling', 'is_required': 0, 'parent_id': None, 'alternative_names': ['doel', 'doelen'], 'order_index': 30, 'level': 1},
-        {'name': 'Hoofd- en Deelvragen', 'identifier': 'hoofd_deelvragen', 'is_required': 0, 'parent_id': None, 'alternative_names': ['onderzoeksvragen', 'vragen'], 'order_index': 40, 'level': 1},
-        {'name': 'Theorie en Achtergrond', 'identifier': 'theorie_achtergrond', 'is_required': 0, 'parent_id': None, 'alternative_names': ['theorie', 'achtergrond', 'theoretisch kader', 'literatuurstudie'], 'order_index': 50, 'level': 1},
+        # Top-level sections (level 1) - Hoofdstukken
+        {'name': 'Hoofdstuk Algemeen', 'identifier': 'hoofdstuk_algemeen', 'is_required': 0, 'parent_id': None, 'alternative_names': ['hoofdstuk', 'chapter', 'hoofdstuk 1', 'hoofdstuk 2', 'hoofdstuk 3', 'hoofdstuk 4'], 'order_index': 5, 'level': 1}, # Voor algemene hoofdstukkoppen
+        {'name': 'Inleiding', 'identifier': 'inleiding', 'is_required': 0, 'parent_id': None, 'alternative_names': ['introductie', 'voorwoord', 'inleiding'], 'order_index': 10, 'level': 1},
+        {'name': 'Probleemanalyse', 'identifier': 'probleemanalyse', 'is_required': 1, 'parent_id': None, 'alternative_names': ['probleemstelling', 'vraagstelling', 'het probleem', 'probleemanalyse'], 'order_index': 20, 'level': 1},
+        {'name': 'Doelstelling', 'identifier': 'doelstelling', 'is_required': 0, 'parent_id': None, 'alternative_names': ['doel', 'doelen', 'doelstelling'], 'order_index': 30, 'level': 1},
+        {'name': 'Hoofd- en Deelvragen', 'identifier': 'hoofd_deelvragen', 'is_required': 0, 'parent_id': None, 'alternative_names': ['onderzoeksvragen', 'vragen', 'hoofd- en deelvragen'], 'order_index': 40, 'level': 1},
+        {'name': 'Theorie en Achtergrond', 'identifier': 'theorie_achtergrond', 'is_required': 0, 'parent_id': None, 'alternative_names': ['theorie', 'achtergrond', 'theoretisch kader', 'literatuurstudie', 'juridische context'], 'order_index': 50, 'level': 1},
         {'name': 'Methode', 'identifier': 'methode', 'is_required': 1, 'parent_id': None, 'alternative_names': ['methodologie', 'onderzoeksmethode', 'methoden', 'methoden: juridisch', 'methoden: praktijk', 'methode representatie'], 'order_index': 60, 'level': 1}, # Uitgebreid
-        {'name': 'Resultaten', 'identifier': 'resultaten', 'is_required': 0, 'parent_id': None, 'alternative_names': ['bevindingen'], 'order_index': 70, 'level': 1},
-        {'name': 'Discussie', 'identifier': 'discussie', 'is_required': 0, 'parent_id': None, 'alternative_names': [], 'order_index': 80, 'level': 1},
-        {'name': 'Conclusie', 'identifier': 'conclusie', 'is_required': 1, 'parent_id': None, 'alternative_names': ['slot'], 'order_index': 90, 'level': 1},
-        {'name': 'Aanbevelingen', 'identifier': 'aanbevelingen', 'is_required': 0, 'parent_id': None, 'alternative_names': [], 'order_index': 100, 'level': 1},
-        {'name': 'Literatuurlijst', 'identifier': 'literatuur', 'is_required': 1, 'parent_id': None, 'alternative_names': ['referenties', 'bibliografie'], 'order_index': 110, 'level': 1},
+        {'name': 'Resultaten', 'identifier': 'resultaten', 'is_required': 0, 'parent_id': None, 'alternative_names': ['bevindingen', 'resultaten'], 'order_index': 70, 'level': 1},
+        {'name': 'Discussie', 'identifier': 'discussie', 'is_required': 0, 'parent_id': None, 'alternative_names': ['discussie'], 'order_index': 80, 'level': 1},
+        {'name': 'Conclusie', 'identifier': 'conclusie', 'is_required': 1, 'parent_id': None, 'alternative_names': ['slot', 'conclusie'], 'order_index': 90, 'level': 1},
+        {'name': 'Aanbevelingen', 'identifier': 'aanbevelingen', 'is_required': 0, 'parent_id': None, 'alternative_names': ['aanbevelingen'], 'order_index': 100, 'level': 1},
+        {'name': 'Literatuurlijst', 'identifier': 'literatuur', 'is_required': 1, 'parent_id': None, 'alternative_names': ['referenties', 'bibliografie', 'literatuurlijst'], 'order_index': 110, 'level': 1},
         {'name': 'Bijlagen', 'identifier': 'bijlagen', 'is_required': 0, 'parent_id': None, 'alternative_names': ['appendix', 'appendices', 'bijlage', 'bijlagen', 'bijlagen:'], 'order_index': 120, 'level': 1}, # Uitgebreid
-        {'name': 'Hoofdstuk Algemeen', 'identifier': 'hoofdstuk_algemeen', 'is_required': 0, 'parent_id': None, 'alternative_names': ['hoofdstuk'], 'order_index': 5, 'level': 1}, # NIEUW: Voor algemene hoofdstukkoppen
 
         # Sub-sections (levels > 1) - Parent IDs worden later ingevuld
         {'name': 'Handelingsprobleem', 'identifier': 'handelingsprobleem', 'is_required': 0, 'parent_id': None, 'parent_name': 'Probleemanalyse', 'alternative_names': ['het handelingsprobleem'], 'order_index': 21, 'level': 2},
@@ -226,7 +268,16 @@ def initialize_db(conn: sqlite3.Connection):
         (3, 'Geen persoonlijk taalgebruik', 'Vermijd persoonlijke voornaamwoorden zoals "ik", "wij", "ons".', 'tekstueel', 'all', 1, 'warning', 'Persoonlijk taalgebruik gevonden.', 'Hanteer een zakelijke schrijfstijl zonder persoonlijke voornaamwoorden.', 'section', 3, None, None, '#FFD700'),
         (4, 'Minimaal 2 paragrafen Methode', 'De methode sectie moet minimaal twee paragrafen bevatten voor structuur.', 'structureel', 'specific_sections', 1, 'warning', 'De methode sectie heeft te weinig paragrafen.', 'Splits de methode sectie op in meer paragrafen voor duidelijkheid.', 'section', 1, 2, None, '#FFD700'),
         (5, 'Verplichte sectie aanwezigheid: Probleemstelling', 'De probleemstelling sectie is verplicht voor dit documenttype.', 'structureel', 'document_only', 1, 'violation', 'De sectie "Probleemstelling" is niet gevonden in het document.', 'Zorg ervoor dat de sectie "Probleemstelling" duidelijk aanwezig is.', 'document', 1, None, None, '#FF0000'),
-        (6, 'Sectievolgorde: Inleiding voor Methode', 'De inleiding moet voor de methodesectie komen.', 'structureel', 'document_only', 1, 'violation', 'De sectie "Methode" staat vóór de "Inleiding".', 'Controleer de volgorde van de secties. De Inleiding moet voor de Methode-sectie komen.', 'document', 1, None, None, '#FF0000')
+        (6, 'Sectievolgorde: Inleiding voor Methode', 'De inleiding moet voor de methodesectie komen.', 'structureel', 'document_only', 1, 'violation', 'De sectie "Methode" staat vóór de "Inleiding".', 'Controleer de volgorde van de secties. De Inleiding moet voor de Methode-sectie komen.', 'document', 1, None, None, '#FF0000'),
+        (7, 'Minimaal 3 hoofdstukken', 'Het document moet minimaal 3 hoofdstukken bevatten.', 'structureel', 'document_only', 1, 'warning', 'Het document heeft te weinig hoofdstukken.', 'Voeg meer hoofdstukken toe voor een betere structuur.', 'document', 1, 3, None, '#FFD700'),
+        (8, 'Hoofdstukken hebben subkopjes', 'Elk hoofdstuk moet minimaal 2 subkopjes hebben.', 'structureel', 'specific_sections', 1, 'warning', 'Dit hoofdstuk heeft te weinig subkopjes.', 'Voeg meer subkopjes toe voor een betere structuur.', 'section', 1, 2, None, '#FFD700'),
+        (9, 'Geen afkortingen zonder uitleg', 'Vermijd afkortingen zonder eerst de volledige term uit te schrijven.', 'tekstueel', 'all', 1, 'warning', 'Afkorting gevonden zonder uitleg.', 'Schrijf de volledige term eerst uit voordat je de afkorting gebruikt.', 'section', 2, None, None, '#FFD700'),
+        (10, 'Consistente nummering', 'Hoofdstukken en secties moeten consistent genummerd zijn.', 'structureel', 'document_only', 1, 'warning', 'Inconsistente nummering gevonden.', 'Zorg voor een consistente nummering van hoofdstukken en secties.', 'document', 1, None, None, '#FFD700'),
+        (11, 'Minimaal 100 woorden per sectie', 'Elke sectie moet minimaal 100 woorden bevatten.', 'structureel', 'specific_sections', 1, 'warning', 'Deze sectie is te kort.', 'Vul de sectie aan met meer inhoud (minimaal 100 woorden).', 'section', 1, 100, None, '#FFD700'),
+        (12, 'Geen dubbele woorden', 'Vermijd herhaling van dezelfde woorden in korte tekst.', 'tekstueel', 'all', 1, 'info', 'Herhaling van woorden gevonden.', 'Vervang herhaalde woorden door synoniemen voor betere leesbaarheid.', 'section', 2, None, None, '#87CEEB'),
+        (13, 'Zakelijke toon', 'Hanteer een zakelijke, objectieve schrijfstijl.', 'tekstueel', 'all', 1, 'warning', 'Niet-zakelijke toon gevonden.', 'Hanteer een zakelijke, objectieve schrijfstijl zonder emotionele uitingen.', 'section', 2, None, None, '#FFD700'),
+        (14, 'Correcte interpunctie', 'Gebruik correcte interpunctie en hoofdletters.', 'tekstueel', 'all', 1, 'info', 'Interpunctie of hoofdlettergebruik kan verbeterd worden.', 'Controleer de interpunctie en het gebruik van hoofdletters.', 'section', 3, None, None, '#87CEEB'),
+        (15, 'Logische structuur', 'De secties moeten logisch geordend zijn.', 'structureel', 'document_only', 1, 'warning', 'De structuur kan logischer geordend worden.', 'Herorganiseer de secties voor een logischere opbouw.', 'document', 1, None, None, '#FFD700')
     ]
     
     # Controleer eerst welke criteria al bestaan
@@ -247,7 +298,7 @@ def initialize_db(conn: sqlite3.Connection):
 
     # Mappings: DocumentType naar Criteria (alleen voor nieuwe criteria)
     rapport_type_id = cursor.execute("SELECT id FROM document_types WHERE identifier = 'rapport'").fetchone()[0]
-    for criteria_id in [1, 2, 3, 4, 5, 6]:
+    for criteria_id in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
         if criteria_id in existing_ids:
             continue  # Skip als criterium al bestond
         cursor.execute("INSERT OR IGNORE INTO document_type_criteria_mappings (document_type_id, criteria_id) VALUES (?, ?)", (rapport_type_id, criteria_id))
@@ -267,6 +318,99 @@ def initialize_db(conn: sqlite3.Connection):
             cursor.execute("INSERT OR IGNORE INTO criteria_section_mappings (criteria_id, section_id, is_excluded) VALUES (?, ?, ?)", (4, methode_id, 0))
     except (TypeError, IndexError) as e:
         print(f"Warning: Could not create section mappings: {e}")
+
+    # Repareer is_enabled velden die als tekst ('on', 'True') zijn opgeslagen i.p.v. integer.
+    # Dit kan voorkomen als criteria via de web-UI zijn aangemaakt/bewerkt.
+    cursor.execute("""
+        UPDATE criteria SET is_enabled = 1
+        WHERE typeof(is_enabled) = 'text' AND is_enabled IN ('on', 'True', 'true', '1')
+    """)
+    cursor.execute("""
+        UPDATE criteria SET is_enabled = 0
+        WHERE typeof(is_enabled) = 'text' AND is_enabled NOT IN ('on', 'True', 'true', '1')
+    """)
+
+    conn.commit()
+
+
+def migrate_db(conn: sqlite3.Connection):
+    """
+    Voert database-migraties uit die altijd uitgevoerd moeten worden,
+    ook als de database al bestaat. Veilig om meerdere keren aan te roepen (idempotent).
+    """
+    cursor = conn.cursor()
+
+    # --- Migratie: users tabel (voor authenticatie) ---
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'consumer',  -- 'admin' of 'consumer'
+            full_name TEXT,
+            organization_id INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id)
+        )
+    """)
+
+    # Standaard admin gebruiker als geen gebruikers bestaan
+    cursor.execute("SELECT COUNT(*) FROM users")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, role, full_name) VALUES (?, ?, ?, ?)",
+            ('admin', generate_password_hash('admin'), 'admin', 'Beheerder')
+        )
+
+    # --- Migratie: uploaded_by kolom in documents ---
+    existing_columns = [row[1] for row in cursor.execute("PRAGMA table_info(documents)").fetchall()]
+    if 'uploaded_by' not in existing_columns:
+        cursor.execute("ALTER TABLE documents ADD COLUMN uploaded_by INTEGER REFERENCES users(id)")
+
+    # --- Migratie: check_type en parameters kolommen ---
+    existing_columns = [row[1] for row in cursor.execute("PRAGMA table_info(criteria)").fetchall()]
+
+    if 'check_type' not in existing_columns:
+        cursor.execute("ALTER TABLE criteria ADD COLUMN check_type TEXT DEFAULT 'none'")
+
+    if 'parameters' not in existing_columns:
+        cursor.execute("ALTER TABLE criteria ADD COLUMN parameters TEXT DEFAULT '{}'")
+
+    # Stel check_type in voor bestaande criteria op basis van hun naam.
+    name_migrations = [
+        ('persoonlijk taalgebruik', 'keyword_forbidden',
+         json.dumps({'keywords': ['ik', 'mij', 'mijn', 'wij', 'ons', 'onze']})),
+        ('deelvragen structuur', 'compound_question', '{}'),
+    ]
+    for name_pattern, check_type, parameters in name_migrations:
+        cursor.execute("""
+            UPDATE criteria
+            SET check_type = ?, parameters = ?
+            WHERE LOWER(name) LIKE ? AND (check_type IS NULL OR check_type = 'none')
+        """, (check_type, parameters, f'%{name_pattern}%'))
+
+    # --- Migratie: normaliseer is_enabled ('on'/'True' → integer 1/0) ---
+    # Kan voorkomen als criteria via de web-UI zijn aangemaakt/bewerkt.
+    cursor.execute("""
+        UPDATE criteria SET is_enabled = 1
+        WHERE typeof(is_enabled) = 'text' AND is_enabled IN ('on', 'True', 'true', '1')
+    """)
+    cursor.execute("""
+        UPDATE criteria SET is_enabled = 0
+        WHERE typeof(is_enabled) = 'text' AND is_enabled NOT IN ('on', 'True', 'true', '1')
+    """)
+
+    # --- Migratie: herstel severity='ok'/NULL voor check-types die echte fouten detecteren ---
+    # 'ok'-severity zorgt ervoor dat gevonden problemen als OK worden weergegeven
+    # en geen Word-comment krijgen.
+    cursor.execute("""
+        UPDATE criteria
+        SET severity = 'warning'
+        WHERE (severity IS NULL OR severity = '' OR severity = 'ok')
+          AND check_type IN ('smart_check', 'keyword_forbidden', 'compound_question',
+                             'keyword_required', 'word_count',
+                             'paragraph_count', 'heading_count')
+    """)
 
     conn.commit()
 
@@ -319,8 +463,11 @@ def get_criteria_for_document_type(conn: sqlite3.Connection, document_type_id: i
     Haalt alle actieve criteria op voor een specifiek documenttype, inclusief hun mappings.
     """
     cursor = conn.cursor()
+    # LEFT JOIN: criteria met expliciete koppeling aan dit documenttype worden geladen,
+    # PLUS criteria zonder enige koppeling (universele criteria).
+    # Zo zijn via de UI toegevoegde criteria direct beschikbaar voor alle documenttypes.
     cursor.execute("""
-        SELECT
+        SELECT DISTINCT
             c.id,
             c.name,
             c.description,
@@ -334,10 +481,14 @@ def get_criteria_for_document_type(conn: sqlite3.Connection, document_type_id: i
             c.max_mentions_per,
             c.expected_value_min,
             c.expected_value_max,
-            c.color
+            c.color,
+            c.check_type,
+            c.parameters
         FROM criteria c
-        JOIN document_type_criteria_mappings dtcm ON c.id = dtcm.criteria_id
-        WHERE dtcm.document_type_id = ? AND c.is_enabled = 1
+        LEFT JOIN document_type_criteria_mappings dtcm ON c.id = dtcm.criteria_id
+        WHERE c.is_enabled = 1
+          AND (dtcm.document_type_id = ?
+               OR dtcm.document_type_id IS NULL)
     """, (document_type_id,))
     
     criteria_rows = cursor.fetchall()
@@ -530,12 +681,12 @@ def unlink_section_from_document_type(db, document_type_id, section_id):
 
 def get_criteria_section_mappings(db, criteria_instance_id):
     """
-    Haal sectie mappings op voor een criteria instance.
+    Haal sectie mappings op voor een criterium.
     """
     mappings = db.execute('''
         SELECT s.* FROM sections s
         JOIN criteria_section_mappings csm ON s.id = csm.section_id
-        WHERE csm.criteria_instance_id = ?
+        WHERE csm.criteria_id = ?
         ORDER BY s.name
     ''', (criteria_instance_id,)).fetchall()
     
@@ -549,11 +700,11 @@ def get_criteria_section_mappings(db, criteria_instance_id):
 
 def link_criteria_to_section(db, criteria_instance_id, section_id):
     """
-    Koppel een criteria instance aan een sectie.
+    Koppel een criterium aan een sectie.
     """
     try:
         db.execute('''
-            INSERT INTO criteria_section_mappings (criteria_instance_id, section_id)
+            INSERT INTO criteria_section_mappings (criteria_id, section_id)
             VALUES (?, ?)
         ''', (criteria_instance_id, section_id))
         db.commit()
@@ -563,11 +714,11 @@ def link_criteria_to_section(db, criteria_instance_id, section_id):
 
 def unlink_criteria_from_section(db, criteria_instance_id, section_id):
     """
-    Verwijder koppeling tussen criteria instance en sectie.
+    Verwijder koppeling tussen criterium en sectie.
     """
     db.execute('''
-        DELETE FROM criteria_section_mappings 
-        WHERE criteria_instance_id = ? AND section_id = ?
+        DELETE FROM criteria_section_mappings
+        WHERE criteria_id = ? AND section_id = ?
     ''', (criteria_instance_id, section_id))
     db.commit()
 

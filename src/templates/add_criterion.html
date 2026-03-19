@@ -33,6 +33,13 @@
     </style>
 </head>
 <body class="p-6">
+    <nav class="max-w-[1200px] mx-auto mb-4 text-sm text-gray-500">
+        <a href="{{ url_for('index') }}" class="text-blue-600 hover:underline">Home</a>
+        <span class="mx-1">›</span>
+        <a href="{{ url_for('list_criteria') }}" class="text-blue-600 hover:underline">Criteria</a>
+        <span class="mx-1">›</span>
+        <span class="text-gray-700">Nieuw Criterium</span>
+    </nav>
     <div class="container mx-auto bg-white p-8 rounded-lg shadow-lg">
         <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b-2 pb-4">Nieuw Criterium Toevoegen</h1>
 
@@ -66,6 +73,71 @@
                 </select>
             </div>
             <div>
+                <label for="check_type" class="block text-sm font-medium text-gray-700">Check-type <span class="text-gray-400 font-normal">(bepaalt welke automatische check wordt uitgevoerd)</span>:</label>
+                <select id="check_type" name="check_type" onchange="toggleCheckFields(this.value)"
+                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <option value="none">— Geen automatische check —</option>
+                    <option value="keyword_forbidden">Verboden woorden (keyword_forbidden)</option>
+                    <option value="keyword_required">Vereiste woorden (keyword_required)</option>
+                    <option value="word_count">Woordtelling (word_count)</option>
+                    <option value="paragraph_count">Paragraaftelling (paragraph_count)</option>
+                    <option value="heading_count">Kopjestelling (heading_count)</option>
+                    <option value="compound_question">Samengestelde deelvraag (compound_question)</option>
+                    <option value="smart_check">SMART-formulering (smart_check)</option>
+                    <option value="llm_review">AI-beoordeling / LLM-review (llm_review)</option>
+                </select>
+            </div>
+
+            {# Keywords veld (keyword_forbidden / keyword_required) #}
+            <div id="keywords_block" style="display:none">
+                <label for="keywords" class="block text-sm font-medium text-gray-700">
+                    Keywords <span class="text-gray-400 font-normal">(komma-gescheiden, bijv. ik, mij, mijn)</span>:
+                </label>
+                <input type="text" id="keywords" name="keywords" placeholder="woord1, woord2, woord3"
+                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            </div>
+
+            {# LLM-review velden #}
+            <div id="llm_block" style="display:none" class="space-y-4 p-4 border border-purple-200 rounded-lg bg-purple-50">
+                <p class="text-sm font-semibold text-purple-800">⚡ AI-beoordeling instellingen</p>
+                <div>
+                    <label for="llm_role_prompt" class="block text-sm font-medium text-gray-700">
+                        Rol-prompt <span class="text-gray-400 font-normal">(instructie voor de AI, bijv. "Je bent een kritische juridische docent…")</span>:
+                    </label>
+                    <textarea id="llm_role_prompt" name="llm_role_prompt" rows="3" placeholder="Je bent een kritische Nederlandse docent die juridische scripties beoordeelt. Let op academische stijl, inhoudelijke diepgang en correct gebruik van bronnen."
+                              class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-purple-500 focus:border-purple-500 text-sm"></textarea>
+                </div>
+                <div>
+                    <label for="llm_criteria_prompt" class="block text-sm font-medium text-gray-700">
+                        Beoordelingscriteria <span class="text-gray-400 font-normal">(wat moet de AI controleren in deze sectie?)</span>:
+                    </label>
+                    <textarea id="llm_criteria_prompt" name="llm_criteria_prompt" rows="5" placeholder="Controleer of de sectie voldoet aan de volgende criteria:
+- Duidelijke probleemstelling met juridische context
+- Gebruik van minimaal 3 bronnen met correcte verwijzingen
+- Geen gebruik van eerste persoon (ik, wij, mijn)
+- Logische opbouw van argumentatie"
+                              class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-purple-500 focus:border-purple-500 text-sm"></textarea>
+                </div>
+                <div class="flex items-center">
+                    <input type="checkbox" id="llm_check_ai_style" name="llm_check_ai_style" value="1"
+                           class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded">
+                    <label for="llm_check_ai_style" class="ml-2 block text-sm text-gray-900">
+                        Detecteer ook AI-gegenereerde stijlkenmerken
+                        <span class="text-gray-400 font-normal">(overdreven formeel taalgebruik, vage algemeenheden, opsommingslijsten zonder diepgang, enz.)</span>
+                    </label>
+                </div>
+            </div>
+
+            <script>
+                function toggleCheckFields(val) {
+                    var isKeyword = (val === 'keyword_forbidden' || val === 'keyword_required');
+                    var isLlm     = (val === 'llm_review');
+                    document.getElementById('keywords_block').style.display = isKeyword ? 'block' : 'none';
+                    document.getElementById('llm_block').style.display      = isLlm     ? 'block' : 'none';
+                }
+                toggleCheckFields(document.getElementById('check_type').value);
+            </script>
+            <div>
                 <label for="application_scope" class="block text-sm font-medium text-gray-700">Toepassingsgebied:</label>
                 <select id="application_scope" name="application_scope" required
                         class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
@@ -84,11 +156,11 @@
                 <label for="severity" class="block text-sm font-medium text-gray-700">Ernst:</label>
                 <select id="severity" name="severity" required
                         class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                    <option value="ok">OK</option>
-                    <option value="info">Informatie</option>
-                    <option value="warning">Waarschuwing</option>
+                    <option value="warning" selected>Waarschuwing</option>
                     <option value="violation">Overtreding</option>
                     <option value="error">Fout</option>
+                    <option value="info">Informatie</option>
+                    <option value="ok">OK (geen comment)</option>
                 </select>
             </div>
             <div>

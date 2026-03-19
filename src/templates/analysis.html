@@ -10,7 +10,7 @@
             <a href="{{ url_for('index') }}">Home</a> > <a href="{{ url_for('list_documents') }}">Documenten</a> > Analyse
         </div>
     </div>
-    
+
     <div class="card">
         <h3>📄 Document Informatie</h3>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
@@ -21,7 +21,7 @@
                 <strong>Type:</strong><br>{{ document_type.name }}
             </div>
             <div>
-                <strong>Upload:</strong><br>{{ document.upload_time.strftime('%d-%m-%Y %H:%M') }}
+                <strong>Upload:</strong><br>{{ document.upload_time or 'Onbekend' }}
             </div>
             <div>
                 <strong>Status:</strong><br>
@@ -35,7 +35,7 @@
             </div>
         </div>
     </div>
-    
+
     <div class="card">
         <h3>🔍 Gevonden Secties</h3>
         <table class="table">
@@ -45,7 +45,6 @@
                     <th>Status</th>
                     <th>Woorden</th>
                     <th>Confidence</th>
-                    <th>Acties</th>
                 </tr>
             </thead>
             <tbody>
@@ -73,19 +72,17 @@
                             </div>
                         {% endif %}
                     </td>
-                    <td>
-                        <button class="btn" style="padding: 4px 8px; font-size: 12px;" onclick="showSectionContent('{{ section.id }}', '{{ section.name }}')">👁️ Bekijk</button>
-                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-    
+
     <div class="card">
         <h3>💬 Feedback & Suggesties</h3>
-        
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px;">
+
+        {# Statistieken #}
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 15px; margin-bottom: 25px;">
             <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
                 <div style="font-size: 24px; font-weight: bold; color: #F94144;">{{ feedback_stats.violations }}</div>
                 <div style="font-size: 14px; color: #6C757D;">Overtredingen</div>
@@ -95,43 +92,75 @@
                 <div style="font-size: 14px; color: #6C757D;">Waarschuwingen</div>
             </div>
             <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #4895EF;">{{ feedback_stats.info }}</div>
+                <div style="font-size: 14px; color: #6C757D;">Informatie</div>
+            </div>
+            <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
                 <div style="font-size: 24px; font-weight: bold; color: #84A98C;">{{ feedback_stats.passed }}</div>
                 <div style="font-size: 14px; color: #6C757D;">Correct</div>
             </div>
         </div>
-        
-        {% for feedback in feedback_items %}
-        <div style="background: #f8f9fa; border-left: 4px solid {{ feedback.color }}; padding: 15px; margin: 10px 0; border-radius: 0 8px 8px 0;">
-            <div style="display: flex; justify-content: space-between; align-items: start;">
-                <div style="flex: 1;">
-                    <h4 style="color: {{ feedback.color }}; margin-bottom: 5px;">
-                        {{ feedback.criterion_name }}
-                        <small style="color: #6C757D; font-weight: normal;">({{ feedback.section_name }})</small>
-                    </h4>
-                    <p style="margin-bottom: 10px;">{{ feedback.message }}</p>
-                    {% if feedback.suggestion %}
-                    <p style="background: rgba(255,255,255,0.7); padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-                        <strong>💡 Suggestie:</strong> {{ feedback.suggestion }}
-                    </p>
-                    {% endif %}
-                    {% if feedback.location %}
-                    <small style="color: #6C757D;">📍 Locatie: {{ feedback.location }}</small>
-                    {% endif %}
+
+        {# Feedback per sectie #}
+        {% for section in sections if section.found %}
+            {% set sec_feedback = feedback_by_section.get(section.name, []) %}
+            {% if sec_feedback %}
+            <div style="margin-bottom: 24px;">
+                <h4 style="border-bottom: 2px solid #4D908E; padding-bottom: 6px; color: #2d3436; margin-bottom: 12px;">
+                    {{ section.name }}
+                </h4>
+                {% for fb in sec_feedback %}
+                <div style="border-left: 4px solid {{ fb.color or '#4895EF' }}; background: #f8f9fa; padding: 12px 16px; border-radius: 0 6px 6px 0; margin-bottom: 8px; font-size: 13px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
+                        <div style="flex: 1;">
+                            <strong style="color: {{ fb.color or '#4895EF' }};">{{ fb.criteria_name or fb.criterion_name }}</strong>
+                            {% if fb.location %}
+                                <small style="color: #6C757D; margin-left: 8px;">— {{ fb.location }}</small>
+                            {% endif %}
+                            <p style="margin: 4px 0 0 0; color: #495057;">{{ fb.message }}</p>
+                            {% if fb.suggestion %}
+                            <p style="margin: 6px 0 0 0; color: #6C757D; font-style: italic;">
+                                Suggestie: {{ fb.suggestion }}
+                            </p>
+                            {% endif %}
+                        </div>
+                        <div style="white-space: nowrap;">
+                            {% if fb.status in ('violation', 'error') %}
+                                <span class="badge" style="background: #F94144; color: white;">Overtreding</span>
+                            {% elif fb.status == 'warning' %}
+                                <span class="badge" style="background: #F9C74F; color: #2B2D42;">Waarschuwing</span>
+                            {% elif fb.status == 'ok' %}
+                                <span class="badge" style="background: #84A98C; color: white;">OK</span>
+                            {% else %}
+                                <span class="badge" style="background: #4895EF; color: white;">{{ fb.status }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
                 </div>
-                <div style="margin-left: 15px;">
-                    {% if feedback.status == 'violation' %}
-                        <span class="badge" style="background: #F94144; color: white;">❌ Fout</span>
-                    {% elif feedback.status == 'warning' %}
-                        <span class="badge" style="background: #F9C74F; color: #2B2D42;">⚠️ Waarschuwing</span>
-                    {% else %}
-                        <span class="badge badge-success">✅ OK</span>
-                    {% endif %}
-                </div>
+                {% endfor %}
             </div>
-        </div>
+            {% endif %}
         {% endfor %}
+
+        {# Feedback die niet aan een sectie is gekoppeld #}
+        {% if non_section_feedback %}
+        <div style="margin-top: 20px;">
+            <h4 style="border-bottom: 2px solid #adb5bd; padding-bottom: 6px; color: #2d3436; margin-bottom: 12px;">Algemeen</h4>
+            {% for fb in non_section_feedback %}
+            <div style="border-left: 4px solid {{ fb.color or '#6C757D' }}; background: #f8f9fa; padding: 12px 16px; border-radius: 0 6px 6px 0; margin-bottom: 8px; font-size: 13px;">
+                <strong style="color: {{ fb.color or '#6C757D' }};">{{ fb.criteria_name or fb.criterion_name }}</strong>
+                <p style="margin: 4px 0 0 0;">{{ fb.message }}</p>
+                {% if fb.suggestion %}<p style="color: #6C757D; font-style: italic; margin: 4px 0 0;">{{ fb.suggestion }}</p>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if not feedback_items %}
+        <p style="color: #6C757D; font-style: italic;">Geen feedback gegenereerd.</p>
+        {% endif %}
     </div>
-    
+
     <div class="card">
         <h3>🔄 Acties</h3>
         <a href="{{ url_for('export_document', document_id=document.id) }}" class="btn">📄 Export Word met Feedback</a>
@@ -139,13 +168,4 @@
         <a href="{{ url_for('upload_document') }}" class="btn">📤 Nieuw Document</a>
         <a href="{{ url_for('list_documents') }}" class="btn btn-secondary">📋 Terug naar Overzicht</a>
     </div>
-    
-    <script>
-    function showSectionContent(sectionId, sectionName) {
-        alert('Sectie inhoud bekijken voor: ' + sectionName + ' (ID: ' + sectionId + ')');
-        // Voor een echte implementatie:
-        // Haal sectie-inhoud op via een API-call of toon een modale pop-up met de inhoud
-        // Voor nu volstaat de alert.
-    }
-    </script>
 {% endblock %}

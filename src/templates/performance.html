@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Performance Statistieken{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>📊 Performance Statistieken</h1>
+    
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Database Performance</h5>
+                </div>
+                <div class="card-body">
+                    {% if stats.message %}
+                        <p>{{ stats.message }}</p>
+                    {% else %}
+                        <table class="table">
+                            <tr>
+                                <td><strong>Totaal queries:</strong></td>
+                                <td>{{ stats.total_queries }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Gemiddelde tijd:</strong></td>
+                                <td>{{ stats.average_time }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Maximale tijd:</strong></td>
+                                <td>{{ stats.max_time }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Minimale tijd:</strong></td>
+                                <td>{{ stats.min_time }}</td>
+                            </tr>
+                        </table>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Cache Statistieken</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table">
+                        <tr>
+                            <td><strong>Cache grootte:</strong></td>
+                            <td>{{ stats.cache_stats.size }} / {{ stats.cache_stats.max_size }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Hit rate:</strong></td>
+                            <td>{{ stats.cache_stats.hit_rate }}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>💡 Optimalisaties voor 4 Gebruikers</h5>
+                </div>
+                <div class="card-body">
+                    <ul>
+                        <li>✅ SQLite WAL mode voor betere concurrentie</li>
+                        <li>✅ Database indexen voor snellere queries</li>
+                        <li>✅ In-memory caching van sectie-content</li>
+                        <li>✅ Performance monitoring</li>
+                        <li>✅ Batch updates voor sectie-content</li>
+                    </ul>
+                    <p class="text-muted">
+                        <strong>Geschikt voor:</strong> 4 gelijktijdige gebruikers<br>
+                        <strong>Kosten:</strong> €0 (alle optimalisaties zijn kostenloos)
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mt-3">
+        <a href="{{ url_for('index') }}" class="btn btn-primary">← Terug naar Home</a>
+    </div>
+</div>
+{% endblock %} 

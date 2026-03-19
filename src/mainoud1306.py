@@ -187,10 +187,7 @@ def init_database():
                     color TEXT DEFAULT '#F94144',
                     is_enabled BOOLEAN DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    max_mentions_per INTEGER DEFAULT 0,
-                    frequency_unit TEXT,
-                    fixed_feedback_text TEXT,
-                    instruction_video_link TEXT
+
                 )
             ''')
 

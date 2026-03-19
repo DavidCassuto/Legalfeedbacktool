@@ -48,15 +48,19 @@
             list-style: none;
             display: flex;
             gap: 20px;
+            flex-wrap: wrap;
+            align-items: center;
         }
         .navbar-nav a {
             color: white;
             text-decoration: none;
             padding: 5px 10px;
-            transition: opacity 0.3s ease;
+            transition: all 0.3s ease;
+            white-space: nowrap;
         }
         .navbar-nav a:hover {
-            opacity: 0.8;
+            opacity: 1;
+            text-decoration: underline;
         }
 
 
@@ -168,12 +172,33 @@
 <body>
     <header>
         <nav class="navbar">
-            <a href="{{ url_for('index') }}" class="navbar-brand">DocuCheck</a>
+            <a href="{{ url_for('index') }}" class="navbar-brand">📄 DocuCheck</a>
             <ul class="navbar-nav">
-                <li><a href="{{ url_for('upload_document') }}">Upload</a></li>
-                <li><a href="{{ url_for('list_documents') }}">Documenten</a></li>
-                <li><a href="{{ url_for('list_criteria') }}">Criteria</a></li>
-                <li><a href="{{ url_for('list_sections') }}">Secties</a></li>
+                {% if session.get('user_id') %}
+                    {# Altijd zichtbaar voor ingelogde gebruikers #}
+                    <li><a href="{{ url_for('upload_document') }}">📤 Upload</a></li>
+                    <li><a href="{{ url_for('list_documents') }}">📂 Mijn Documenten</a></li>
+
+                    {# Alleen zichtbaar voor beheerders #}
+                    {% if session.get('user_role') == 'admin' %}
+                        <li><a href="{{ url_for('list_criteria') }}">⚙️ Criteria</a></li>
+                        <li><a href="{{ url_for('list_sections') }}">📑 Secties</a></li>
+                        <li><a href="{{ url_for('list_document_types') }}">📋 Documenttypen</a></li>
+                        <li><a href="{{ url_for('list_organizations') }}">🏫 Organisaties</a></li>
+                        <li><a href="{{ url_for('list_users') }}">👤 Gebruikers</a></li>
+                    {% endif %}
+
+                    {# Gebruiker info + uitloggen #}
+                    <li style="margin-left:16px; border-left:1px solid rgba(255,255,255,0.3); padding-left:16px;">
+                        <span style="opacity:0.8; font-size:0.9em;">
+                            {% if session.get('user_role') == 'admin' %}🔑{% else %}👤{% endif %}
+                            {{ session.get('username', '') }}
+                        </span>
+                    </li>
+                    <li><a href="{{ url_for('logout') }}" style="opacity:1; font-weight:bold; color:#FFD700;">🚪 Uitloggen</a></li>
+                {% else %}
+                    <li><a href="{{ url_for('login') }}">Inloggen</a></li>
+                {% endif %}
             </ul>
         </nav>
     </header>

@@ -73,10 +73,22 @@ def parse_document(file_path: str) -> tuple[str, list[str], list[dict]]:
         for para in doc.paragraphs:
             para_text = para.text # Ruwe tekst van de paragraaf
             paragraphs.append(para_text.strip())
-            full_text += para_text + '\n' # Voeg een newline toe na elke paragraaf voor consistentie
+
+            # Bepaal stijltype VOORDAT we toevoegen aan full_text
+            style_name = para.style.name if para.style else 'Normal'
+            is_heading = style_name.startswith('Heading')
+            is_empty = not para_text.strip()
+
+            if is_heading or is_empty:
+                # Koppen en lege regels krijgen GEEN dubbele newline
+                # → worden niet herkend als alinea bij paragraaf-lengte-check
+                full_text += para_text + '\n'
+            else:
+                # Normale inhoudelijke alinea → dubbele newline als alinea-scheidingsteken
+                full_text += para_text + '\n\n'
 
             # Docx headings hebben een ingebouwde stijl-informatie
-            if para.style and para.style.name.startswith('Heading'):
+            if is_heading:
                 try:
                     level = int(para.style.name.replace('Heading ', ''))
                 except ValueError:

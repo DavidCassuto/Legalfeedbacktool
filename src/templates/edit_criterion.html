@@ -30,24 +30,18 @@
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
-        .flash-danger {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
     </style>
 </head>
 <body class="p-6">
+    <nav class="max-w-[700px] mx-auto mb-4 text-sm text-gray-500">
+        <a href="{{ url_for('index') }}" class="text-blue-600 hover:underline">Home</a>
+        <span class="mx-1">›</span>
+        <a href="{{ url_for('list_criteria') }}" class="text-blue-600 hover:underline">Criteria</a>
+        <span class="mx-1">›</span>
+        <span class="text-gray-700">{{ criterion.name }}</span>
+    </nav>
     <div class="container mx-auto bg-white p-8 rounded-lg shadow-lg">
-        <!-- Navigation header -->
-        <div class="mb-6 flex items-center justify-between">
-            <div class="flex items-center space-x-4">
-                <a href="{{ url_for('list_criteria') }}" class="text-blue-600 hover:text-blue-800 font-medium">
-                    ← Terug naar Criteria Overzicht
-                </a>
-            </div>
-            <h1 class="text-3xl font-bold text-gray-800">Criterium Bewerken</h1>
-        </div>
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b-2 pb-4">Criterium Bewerken: {{ criterion.name }}</h1>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -63,20 +57,6 @@
                 <input type="text" id="name" name="name" value="{{ criterion.name }}" required
                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
             </div>
-            
-            <div>
-                <label for="document_type_id" class="block text-sm font-medium text-gray-700">Document Type:</label>
-                <select id="document_type_id" name="document_type_id" required
-                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                    <option value="">Selecteer een document type</option>
-                    {% for doc_type in document_types %}
-                        <option value="{{ doc_type.id }}" {% if current_doc_type_id == doc_type.id %}selected{% endif %}>
-                            {{ doc_type.name }}
-                        </option>
-                    {% endfor %}
-                </select>
-            </div>
-            
             <div>
                 <label for="description" class="block text-sm font-medium text-gray-700">Beschrijving:</label>
                 <textarea id="description" name="description" rows="3"
@@ -93,6 +73,73 @@
                 </select>
             </div>
             <div>
+                <label for="check_type" class="block text-sm font-medium text-gray-700">Check-type <span class="text-gray-400 font-normal">(bepaalt welke automatische check wordt uitgevoerd)</span>:</label>
+                <select id="check_type" name="check_type" onchange="toggleCheckFields(this.value)"
+                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <option value="none" {% if not criterion.check_type or criterion.check_type == 'none' %}selected{% endif %}>— Geen automatische check —</option>
+                    <option value="keyword_forbidden" {% if criterion.check_type == 'keyword_forbidden' %}selected{% endif %}>Verboden woorden (keyword_forbidden)</option>
+                    <option value="keyword_required" {% if criterion.check_type == 'keyword_required' %}selected{% endif %}>Vereiste woorden (keyword_required)</option>
+                    <option value="word_count" {% if criterion.check_type == 'word_count' %}selected{% endif %}>Woordtelling (word_count)</option>
+                    <option value="paragraph_count" {% if criterion.check_type == 'paragraph_count' %}selected{% endif %}>Paragraaftelling (paragraph_count)</option>
+                    <option value="heading_count" {% if criterion.check_type == 'heading_count' %}selected{% endif %}>Kopjestelling (heading_count)</option>
+                    <option value="compound_question" {% if criterion.check_type == 'compound_question' %}selected{% endif %}>Samengestelde deelvraag (compound_question)</option>
+                    <option value="smart_check" {% if criterion.check_type == 'smart_check' %}selected{% endif %}>SMART-formulering (smart_check)</option>
+                    <option value="llm_review" {% if criterion.check_type == 'llm_review' %}selected{% endif %}>AI-beoordeling / LLM-review (llm_review)</option>
+                </select>
+            </div>
+
+            {# Keywords veld (keyword_forbidden / keyword_required) #}
+            <div id="keywords_block" {% if criterion.check_type not in ('keyword_forbidden', 'keyword_required') %}style="display:none"{% endif %}>
+                <label for="keywords" class="block text-sm font-medium text-gray-700">
+                    Keywords <span class="text-gray-400 font-normal">(komma-gescheiden, bijv. ik, mij, mijn)</span>:
+                </label>
+                <input type="text" id="keywords" name="keywords"
+                       value="{{ criterion_keywords }}"
+                       placeholder="woord1, woord2, woord3"
+                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            </div>
+
+            {# LLM-review velden #}
+            <div id="llm_block" {% if criterion.check_type != 'llm_review' %}style="display:none"{% endif %}
+                 class="space-y-4 p-4 border border-purple-200 rounded-lg bg-purple-50">
+                <p class="text-sm font-semibold text-purple-800">⚡ AI-beoordeling instellingen</p>
+                <div>
+                    <label for="llm_role_prompt" class="block text-sm font-medium text-gray-700">
+                        Rol-prompt <span class="text-gray-400 font-normal">(instructie voor de AI, bijv. "Je bent een kritische juridische docent…")</span>:
+                    </label>
+                    <textarea id="llm_role_prompt" name="llm_role_prompt" rows="3"
+                              placeholder="Je bent een kritische Nederlandse docent die juridische scripties beoordeelt."
+                              class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-purple-500 focus:border-purple-500 text-sm">{{ llm_role_prompt }}</textarea>
+                </div>
+                <div>
+                    <label for="llm_criteria_prompt" class="block text-sm font-medium text-gray-700">
+                        Beoordelingscriteria <span class="text-gray-400 font-normal">(wat moet de AI controleren in deze sectie?)</span>:
+                    </label>
+                    <textarea id="llm_criteria_prompt" name="llm_criteria_prompt" rows="5"
+                              placeholder="Controleer of de sectie voldoet aan de volgende criteria:&#10;- Duidelijke probleemstelling&#10;- Gebruik van bronnen"
+                              class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-purple-500 focus:border-purple-500 text-sm">{{ llm_criteria_prompt }}</textarea>
+                </div>
+                <div class="flex items-center">
+                    <input type="checkbox" id="llm_check_ai_style" name="llm_check_ai_style" value="1"
+                           {% if llm_check_ai_style %}checked{% endif %}
+                           class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded">
+                    <label for="llm_check_ai_style" class="ml-2 block text-sm text-gray-900">
+                        Detecteer ook AI-gegenereerde stijlkenmerken
+                        <span class="text-gray-400 font-normal">(overdreven formeel taalgebruik, vage algemeenheden, opsommingslijsten zonder diepgang, enz.)</span>
+                    </label>
+                </div>
+            </div>
+
+            <script>
+                function toggleCheckFields(val) {
+                    var isKeyword = (val === 'keyword_forbidden' || val === 'keyword_required');
+                    var isLlm     = (val === 'llm_review');
+                    document.getElementById('keywords_block').style.display = isKeyword ? 'block' : 'none';
+                    document.getElementById('llm_block').style.display      = isLlm     ? 'block' : 'none';
+                }
+                toggleCheckFields(document.getElementById('check_type').value);
+            </script>
+            <div>
                 <label for="application_scope" class="block text-sm font-medium text-gray-700">Toepassingsgebied:</label>
                 <select id="application_scope" name="application_scope" required
                         class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
@@ -107,15 +154,24 @@
                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
                 <label for="is_enabled" class="ml-2 block text-sm text-gray-900">Ingeschakeld</label>
             </div>
+            <div class="flex items-center">
+                <input type="checkbox" id="show_suggestion" name="show_suggestion" value="1"
+                       {% if show_suggestion %}checked{% endif %}
+                       class="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded">
+                <label for="show_suggestion" class="ml-2 block text-sm text-gray-900">
+                    Toon suggestie in Word-commentaar
+                    <span class="text-xs text-gray-500">(uitvinken = alleen het probleem tonen, geen verbetervoorstel)</span>
+                </label>
+            </div>
             <div>
                 <label for="severity" class="block text-sm font-medium text-gray-700">Ernst:</label>
                 <select id="severity" name="severity" required
                         class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                    <option value="ok" {% if criterion.severity == 'ok' %}selected{% endif %}>OK</option>
-                    <option value="info" {% if criterion.severity == 'info' %}selected{% endif %}>Informatie</option>
-                    <option value="warning" {% if criterion.severity == 'warning' %}selected{% endif %}>Waarschuwing</option>
+                    <option value="warning" {% if criterion.severity == 'warning' or not criterion.severity %}selected{% endif %}>Waarschuwing</option>
                     <option value="violation" {% if criterion.severity == 'violation' %}selected{% endif %}>Overtreding</option>
                     <option value="error" {% if criterion.severity == 'error' %}selected{% endif %}>Fout</option>
+                    <option value="info" {% if criterion.severity == 'info' %}selected{% endif %}>Informatie</option>
+                    <option value="ok" {% if criterion.severity == 'ok' %}selected{% endif %}>OK (geen comment)</option>
                 </select>
             </div>
             <div>
@@ -161,7 +217,7 @@
                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
             </div>
             
-            <div class="flex justify-end space-x-3 pt-6 border-t">
+            <div class="flex justify-end space-x-3">
                 <a href="{{ url_for('list_criteria') }}" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg shadow transition duration-200">Annuleren</a>
                 <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-200">Criterium Opslaan</button>
             </div>
@@ -169,3 +225,4 @@
     </div>
 </body>
 </html>
+        

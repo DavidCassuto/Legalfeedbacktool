@@ -205,11 +205,12 @@ def _find_target_paragraph_idx(
     ]
 
     if offending_snippet and len(offending_snippet.strip()) >= 5:
-        snippet_lower = offending_snippet.lower().strip()
+        snippet_lower = re.sub(r'\s+', ' ', offending_snippet.lower().strip())
 
         match_idx = None
         for item in section_items:
-            if snippet_lower in item['text'].lower():
+            item_text = re.sub(r'\s+', ' ', item['text'].lower())
+            if snippet_lower in item_text:
                 match_idx = item['idx']
                 break
 

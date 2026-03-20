@@ -362,28 +362,36 @@ def check_paragraph_word_count(criterion: dict, section: dict, db_connection: sq
         word_count = len(re.findall(r'\b\w+\b', para_text))
 
         if expected_min_words is not None and word_count < expected_min_words:
+            custom_msg = get_criterion_value(criterion, 'error_message')
+            custom_fix = get_criterion_value(criterion, 'fixed_feedback_text')
+            message    = f"Alinea {para_idx + 1}: {custom_msg} ({word_count} woorden, minimaal {int(expected_min_words)} vereist)." if custom_msg else f"Alinea {para_idx + 1} heeft {word_count} woorden, minimaal {int(expected_min_words)} vereist."
+            suggestion = custom_fix or f"Breid deze alinea uit van {word_count} naar minimaal {int(expected_min_words)} woorden."
             feedback_list.append({
                 'criteria_id': get_criterion_value(criterion, 'id'),
                 'criteria_name': get_criterion_value(criterion, 'name'),
                 'section_id': section.get('db_id'),
                 'section_name': section['name'],
                 'status': get_criterion_value(criterion, 'severity', 'warning'),
-                'message': f"Alinea {para_idx + 1} heeft {word_count} woorden, minimaal {expected_min_words} vereist.",
-                'suggestion': f"Breid deze alinea uit van {word_count} naar minimaal {expected_min_words} woorden.",
+                'message': message,
+                'suggestion': suggestion,
                 'location': f"Sectie '{section['name']}', alinea {para_idx + 1}",
                 'offending_snippet': para_text[:120],
                 'confidence': 0.85,
                 'color': get_criterion_value(criterion, 'color', '#FFD700')
             })
         elif expected_max_words is not None and word_count > expected_max_words:
+            custom_msg = get_criterion_value(criterion, 'error_message')
+            custom_fix = get_criterion_value(criterion, 'fixed_feedback_text')
+            message    = f"Alinea {para_idx + 1}: {custom_msg} ({word_count} woorden, maximaal {int(expected_max_words)} toegestaan)." if custom_msg else f"Alinea {para_idx + 1} heeft {word_count} woorden, maximaal {int(expected_max_words)} toegestaan."
+            suggestion = custom_fix or f"Verkort deze alinea van {word_count} naar maximaal {int(expected_max_words)} woorden."
             feedback_list.append({
                 'criteria_id': get_criterion_value(criterion, 'id'),
                 'criteria_name': get_criterion_value(criterion, 'name'),
                 'section_id': section.get('db_id'),
                 'section_name': section['name'],
                 'status': get_criterion_value(criterion, 'severity', 'warning'),
-                'message': f"Alinea {para_idx + 1} heeft {word_count} woorden, maximaal {expected_max_words} toegestaan.",
-                'suggestion': f"Verkort deze alinea van {word_count} naar maximaal {expected_max_words} woorden.",
+                'message': message,
+                'suggestion': suggestion,
                 'location': f"Sectie '{section['name']}', alinea {para_idx + 1}",
                 'offending_snippet': para_text[:120],
                 'confidence': 0.85,

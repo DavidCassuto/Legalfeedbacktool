@@ -543,24 +543,27 @@ def add_inline_comments(
     }
 
     # Stap 2: groepeer feedback per doel-paragraaf
-    # Dedupliceer na routing op (criteria_id, para_idx): hetzelfde criterium kan via
-    # zowel een parent-sectie als een sub-sectie hetzelfde feedback item genereren.
-    # Na de routing-fix (snippet → altijd directe paragraaf) landen duplicaten nu op
-    # dezelfde para_idx. We bewaren alleen het eerste exemplaar.
+    # Dedupliceer op (criteria_id, snippet_tekst): hetzelfde criterium op dezelfde
+    # alinea via zowel parent-sectie als sub-sectie geeft identieke snippet-tekst.
+    # Items ZONDER snippet (bijv. meerdere AI-problemen) worden nooit weggefilterd —
+    # die hebben allemaal een eigen citaat en moeten allemaal zichtbaar blijven.
     para_groups: Dict[int, List[Dict]] = {}
-    seen_criterion_para: set = set()
+    seen_snippet_keys: set = set()
     for fi in active:
+        snippet = fi.get('offending_snippet')
+        if snippet:
+            crit_id   = fi.get('criteria_id') or fi.get('criteria_name', '')
+            dedup_key = (crit_id, snippet.strip()[:80])
+            if dedup_key in seen_snippet_keys:
+                logger.debug("Dedup: %s met snippet '%s...' al aanwezig — overgeslagen",
+                             crit_id, snippet[:30])
+                continue
+            seen_snippet_keys.add(dedup_key)
+
         section_name = fi.get('section_name', '')
-        snippet      = fi.get('offending_snippet')
         para_idx, loc = _find_target_paragraph_idx(
             para_structure, section_name, snippet, section_heading_texts
         )
-        crit_id   = fi.get('criteria_id') or fi.get('criteria_name', '')
-        dedup_key = (crit_id, para_idx)
-        if dedup_key in seen_criterion_para:
-            logger.debug("Dedup: %s op para %d al aanwezig — overgeslagen", crit_id, para_idx)
-            continue
-        seen_criterion_para.add(dedup_key)
         logger.debug("Route: %s → para %d (%s)",
                      fi.get('criteria_name') or fi.get('criterion_name', '?'),
                      para_idx, loc)

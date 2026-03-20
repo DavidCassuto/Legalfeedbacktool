@@ -214,19 +214,11 @@ def _find_target_paragraph_idx(
                 break
 
         if match_idx is not None:
-            best_sub: Optional[Dict] = None
-            for item in section_items:
-                if item['idx'] > match_idx:
-                    break
-                if item['is_heading'] and item['level'] > section_level:
-                    best_sub = item
-
-            if best_sub:
-                return best_sub['idx'], f"sub-sectie '{best_sub['text']}'"
-            else:
-                matched = para_structure[match_idx]
-                if not matched['is_heading']:
-                    return matched['idx'], f"paragraaf in '{section_name}'"
+            matched = para_structure[match_idx]
+            if not matched['is_heading']:
+                # Snippet gevonden in een specifieke alinea → altijd direct plaatsen.
+                # Niet doorsturen naar een sub-heading: de comment hoort bij de alinea zelf.
+                return matched['idx'], f"paragraaf in '{section_name}'"
 
     return heading_idx, f"sectie '{section_name}'"
 
@@ -532,37 +524,6 @@ def add_inline_comments(
         if fi.get('status') not in ('ok', None, '')
     ]
 
-    # Dedupliceer: als hetzelfde criterium voor dezelfde alinea-snippet meerdere keren
-    # voorkomt (bijv. via zowel de parent-sectie als de sub-sectie), bewaar dan alleen
-    # het meest specifieke item — het item MET een offending_snippet heeft prioriteit.
-    _seen: Dict[tuple, Dict] = {}
-    for fi in active:
-        crit_id = fi.get('criteria_id') or fi.get('criteria_name', '')
-        snippet = (fi.get('offending_snippet') or '').strip()[:80]
-        key = (crit_id, snippet) if snippet else None
-        if key is None:
-            continue  # items zonder snippet altijd bewaren — geen dedup mogelijk
-        existing = _seen.get(key)
-        if existing is None:
-            _seen[key] = fi
-        elif fi.get('offending_snippet') and not existing.get('offending_snippet'):
-            # Vervang item zonder snippet door item met snippet (specifieker)
-            _seen[key] = fi
-    # Herbouw active: items met snippet → alleen de geduplificeerde versie bewaren
-    snippets_seen = set()
-    deduplicated = []
-    for fi in active:
-        snippet = (fi.get('offending_snippet') or '').strip()[:80]
-        crit_id = fi.get('criteria_id') or fi.get('criteria_name', '')
-        key = (crit_id, snippet) if snippet else None
-        if key is not None:
-            if key in snippets_seen:
-                continue  # duplicaat — overslaan
-            snippets_seen.add(key)
-            if _seen.get(key) is not fi:
-                continue  # niet het beste exemplaar
-        deduplicated.append(fi)
-    active = deduplicated
 
     if not active:
         logger.info("Geen afwijkingen - document ongewijzigd gekopieerd.")
@@ -582,13 +543,24 @@ def add_inline_comments(
     }
 
     # Stap 2: groepeer feedback per doel-paragraaf
+    # Dedupliceer na routing op (criteria_id, para_idx): hetzelfde criterium kan via
+    # zowel een parent-sectie als een sub-sectie hetzelfde feedback item genereren.
+    # Na de routing-fix (snippet → altijd directe paragraaf) landen duplicaten nu op
+    # dezelfde para_idx. We bewaren alleen het eerste exemplaar.
     para_groups: Dict[int, List[Dict]] = {}
+    seen_criterion_para: set = set()
     for fi in active:
         section_name = fi.get('section_name', '')
         snippet      = fi.get('offending_snippet')
         para_idx, loc = _find_target_paragraph_idx(
             para_structure, section_name, snippet, section_heading_texts
         )
+        crit_id   = fi.get('criteria_id') or fi.get('criteria_name', '')
+        dedup_key = (crit_id, para_idx)
+        if dedup_key in seen_criterion_para:
+            logger.debug("Dedup: %s op para %d al aanwezig — overgeslagen", crit_id, para_idx)
+            continue
+        seen_criterion_para.add(dedup_key)
         logger.debug("Route: %s → para %d (%s)",
                      fi.get('criteria_name') or fi.get('criterion_name', '?'),
                      para_idx, loc)

@@ -371,6 +371,7 @@ def check_paragraph_word_count(criterion: dict, section: dict, db_connection: sq
                 'message': f"Alinea {para_idx + 1} in '{section['name']}' heeft {word_count} woorden, minimaal {expected_min_words} vereist.",
                 'suggestion': f"Breid alinea {para_idx + 1} uit. Huidig: {word_count} woorden, Vereist: {expected_min_words} woorden.",
                 'location': f"Sectie '{section['name']}', alinea {para_idx + 1}",
+                'offending_snippet': para_text[:120],
                 'confidence': 0.85,
                 'color': get_criterion_value(criterion, 'color', '#FFD700')
             })
@@ -384,6 +385,7 @@ def check_paragraph_word_count(criterion: dict, section: dict, db_connection: sq
                 'message': f"Alinea {para_idx + 1} in '{section['name']}' heeft {word_count} woorden, maximaal {expected_max_words} toegestaan.",
                 'suggestion': f"Verkort alinea {para_idx + 1}. Huidig: {word_count} woorden, Maximaal: {expected_max_words} woorden.",
                 'location': f"Sectie '{section['name']}', alinea {para_idx + 1}",
+                'offending_snippet': para_text[:120],
                 'confidence': 0.85,
                 'color': get_criterion_value(criterion, 'color', '#FFD700')
             })
@@ -486,6 +488,7 @@ def check_llm_review(criterion: dict, section: dict, db_connection: sqlite3.Conn
     of één 'ok'-item als de sectie voldoet.
     """
     import anthropic as _anthropic
+    from config import Config
 
     # --- Parameters ophalen ---
     try:
@@ -523,7 +526,7 @@ def check_llm_review(criterion: dict, section: dict, db_connection: sqlite3.Conn
 
     # --- Claude API-call ---
     try:
-        client = _anthropic.Anthropic()
+        client = _anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
         response = client.messages.create(
             model='claude-haiku-4-5',
             max_tokens=2048,

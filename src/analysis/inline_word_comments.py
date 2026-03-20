@@ -532,6 +532,38 @@ def add_inline_comments(
         if fi.get('status') not in ('ok', None, '')
     ]
 
+    # Dedupliceer: als hetzelfde criterium voor dezelfde alinea-snippet meerdere keren
+    # voorkomt (bijv. via zowel de parent-sectie als de sub-sectie), bewaar dan alleen
+    # het meest specifieke item — het item MET een offending_snippet heeft prioriteit.
+    _seen: Dict[tuple, Dict] = {}
+    for fi in active:
+        crit_id = fi.get('criteria_id') or fi.get('criteria_name', '')
+        snippet = (fi.get('offending_snippet') or '').strip()[:80]
+        key = (crit_id, snippet) if snippet else None
+        if key is None:
+            continue  # items zonder snippet altijd bewaren — geen dedup mogelijk
+        existing = _seen.get(key)
+        if existing is None:
+            _seen[key] = fi
+        elif fi.get('offending_snippet') and not existing.get('offending_snippet'):
+            # Vervang item zonder snippet door item met snippet (specifieker)
+            _seen[key] = fi
+    # Herbouw active: items met snippet → alleen de geduplificeerde versie bewaren
+    snippets_seen = set()
+    deduplicated = []
+    for fi in active:
+        snippet = (fi.get('offending_snippet') or '').strip()[:80]
+        crit_id = fi.get('criteria_id') or fi.get('criteria_name', '')
+        key = (crit_id, snippet) if snippet else None
+        if key is not None:
+            if key in snippets_seen:
+                continue  # duplicaat — overslaan
+            snippets_seen.add(key)
+            if _seen.get(key) is not fi:
+                continue  # niet het beste exemplaar
+        deduplicated.append(fi)
+    active = deduplicated
+
     if not active:
         logger.info("Geen afwijkingen - document ongewijzigd gekopieerd.")
         shutil.copy2(original_docx_path, output_path)

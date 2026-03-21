@@ -32,12 +32,17 @@
         .navbar {
             background: linear-gradient(135deg, #4D908E 0%, #52796F 100%);
             padding: 10px 20px;
-            border-radius: 8px;
+            border-radius: 0;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
             margin-bottom: 20px;
-            box-shadow: 0 2px 8px rgba(77, 144, 142, 0.3);
+            box-shadow: 0 2px 8px rgba(77, 144, 142, 0.35);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
         }
         .navbar-brand {
             color: white;

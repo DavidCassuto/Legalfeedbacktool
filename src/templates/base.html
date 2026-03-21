@@ -30,13 +30,14 @@
 
         /* === NAVIGATIE (NIEUW: Toegevoegd voor base.html) === */
         .navbar {
-            background: rgba(255,255,255,0.1);
+            background: linear-gradient(135deg, #4D908E 0%, #52796F 100%);
             padding: 10px 20px;
             border-radius: 8px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px; /* Ruimte onder de navbar */
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(77, 144, 142, 0.3);
         }
         .navbar-brand {
             color: white;
@@ -55,12 +56,14 @@
             color: white;
             text-decoration: none;
             padding: 5px 10px;
-            transition: all 0.3s ease;
+            border-radius: 4px;
+            transition: all 0.2s ease;
             white-space: nowrap;
+            font-weight: 500;
         }
         .navbar-nav a:hover {
-            opacity: 1;
-            text-decoration: underline;
+            background: rgba(255,255,255,0.2);
+            text-decoration: none;
         }
 
 

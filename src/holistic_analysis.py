@@ -56,9 +56,23 @@ def _build_system_prompt(product_type: str) -> str:
     )
 
 
-def _build_user_prompt(rubric_text: str, document_text: str) -> str:
+def _build_user_prompt(rubric_text: str, document_text: str,
+                       detect_product_type: bool = False) -> str:
     """Bouwt de instructie + JSON-schema. Document komt als laatste (groot blok)."""
-    return f"""Hieronder staan eerst de BEOORDELINGSRUBRIC en daarna het volledige STUDENTDOCUMENT.
+    if detect_product_type:
+        detect_instr = (
+            "Hieronder staan MEERDERE rubrieken (één per beroepsproduct: PvA, Analyse, "
+            "Advies, Ontwerp, Fabricaat, Eindgesprek). Bepaal EERST, op basis van de "
+            "inhoud en vorm van het document, welk beroepsproduct hier wordt beoordeeld, "
+            "en beoordeel het document UITSLUITEND volgens de bijbehorende rubric. "
+            "Vermeld het gekozen beroepsproduct in het veld \"product_type\".\n\n"
+        )
+        pt_field = '  "product_type": "<het door jou bepaalde beroepsproduct>",\n'
+    else:
+        detect_instr = ""
+        pt_field = ""
+
+    return f"""{detect_instr}Hieronder staan eerst de BEOORDELINGSRUBRIC en daarna het volledige STUDENTDOCUMENT.
 
 Beoordeel het document onderdeel voor onderdeel volgens de rubric. Bepaal per
 rubric-onderdeel een oordeel en, waar relevant, concrete bevindingen die je aan een
@@ -76,7 +90,7 @@ ZEER BELANGRIJK voor elke bevinding:
 Geef je antwoord UITSLUITEND als geldige JSON, zonder extra tekst eromheen, in dit schema:
 
 {{
-  "rubric_items": [
+{pt_field}  "rubric_items": [
     {{
       "naam": "<naam van het rubric-onderdeel, bv. Methode>",
       "score": "<jouw oordeel/score in de termen van de rubric, bv. 'Voldoende (6)'>",
@@ -171,6 +185,7 @@ def run_holistic_analysis(
     product_type: str = 'Onbekend',
     model: str = DEFAULT_MODEL,
     output_path: str | None = None,
+    detect_product_type: bool = False,
 ) -> dict:
     """
     Voer de holistische analyse uit en plaats Word-comments via de bestaande engine.
@@ -194,14 +209,16 @@ def run_holistic_analysis(
         raise RuntimeError("Kon geen tekst uit het document halen (leeg of onleesbaar).")
 
     # 2. LLM-call
-    system_prompt = _build_system_prompt(product_type)
-    user_prompt = _build_user_prompt(rubric_text, full_text)
+    system_prompt = _build_system_prompt('automatisch te bepalen' if detect_product_type else product_type)
+    user_prompt = _build_user_prompt(rubric_text, full_text, detect_product_type)
     llm = _call_llm(system_prompt, user_prompt, model)
     logger.info("LLM klaar | in=%d out=%d tokens", llm['input_tokens'], llm['output_tokens'])
 
     data = _parse_json(llm['text'])
     rubric_items = data.get('rubric_items', []) or []
     eindbeeld = data.get('eindbeeld', '') or ''
+    # Door de LLM bepaald beroepsproduct (auto-detect) — anders de meegegeven keuze
+    detected_product_type = (data.get('product_type') or '').strip() or product_type
 
     # 3. Bevindingen omzetten naar feedback-items voor de comment-engine
     norm_paras = [_normalize(p) for p in paragraphs]
@@ -263,6 +280,7 @@ def run_holistic_analysis(
     return {
         'rubric_items':   rubric_items,
         'eindbeeld':      eindbeeld,
+        'product_type':   detected_product_type,
         'feedback_items': feedback_items,
         'placed_count':   placed_count,
         'unplaced':       unplaced,

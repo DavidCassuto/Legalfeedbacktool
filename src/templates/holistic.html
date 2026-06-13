@@ -49,17 +49,28 @@
     <input type="file" id="file" name="file" accept=".docx" required>
     <div class="holo-hint">Alleen .docx — Word-comments kunnen niet in een gescande PDF.</div>
 
-    <label for="product_type">Producttype (beoordelingsformulier)</label>
+    <label for="rubric_file">Beoordelingsformulier (.xlsx)</label>
+    <input type="file" id="rubric_file" name="rubric_file" accept=".xlsx,.xlsm">
+    <div class="holo-hint">Upload het Excel-beoordelingsformulier — niets plakken nodig.
+      De rubriek-tekst wordt automatisch uit het juiste tabblad gehaald.</div>
+
+    <label for="product_type">Beroepsproduct (welk tabblad)</label>
     <select id="product_type" name="product_type">
+      <option value="{{ auto_detect }}" {% if not form or form.product_type == auto_detect %}selected{% endif %}>
+        🔎 Automatisch detecteren (laat de AI het tabblad kiezen)
+      </option>
       {% for pt in product_types %}
         <option value="{{ pt }}" {% if form and form.product_type == pt %}selected{% endif %}>{{ pt }}</option>
       {% endfor %}
     </select>
+    <div class="holo-hint">Kies het tabblad zelf, of laat de AI op basis van het document bepalen
+      om welk beroepsproduct het gaat.</div>
 
-    <label for="rubric_text">Beoordelingsrubric (plak hier de criteria)</label>
-    <textarea id="rubric_text" name="rubric_text"
-              placeholder="Plak hier de rubric-onderdelen en hun beoordelingscriteria...">{{ form.rubric_text if form else '' }}</textarea>
-    <div class="holo-hint">Tip: kopieer de relevante kolom/onderdelen uit het beoordelingsformulier.</div>
+    <details style="margin-top:16px;">
+      <summary style="cursor:pointer; color:#52796F; font-weight:600;">Of: rubric als tekst plakken (optioneel)</summary>
+      <textarea id="rubric_text" name="rubric_text"
+                placeholder="Alleen invullen als je géén Excel-bestand uploadt...">{{ form.rubric_text if form else '' }}</textarea>
+    </details>
 
     <button class="holo-btn" type="submit">Analyseren &amp; comments plaatsen</button>
   </form>
@@ -69,6 +80,7 @@
 <div class="holo-card">
   <h2>2. Resultaat</h2>
   <p>
+    {% if result.product_type %}Beroepsproduct: <strong>{{ result.product_type }}</strong> &middot;{% endif %}
     Model: <strong>{{ result.model }}</strong> &middot;
     tokens: {{ result.usage.input_tokens }} in / {{ result.usage.output_tokens }} uit &middot;
     bevindingen geplaatst: <strong>{{ result.placed_count }}</strong>

@@ -183,6 +183,7 @@
                     {# Altijd zichtbaar voor ingelogde gebruikers #}
                     <li><a href="{{ url_for('upload_document') }}">📤 Upload</a></li>
                     <li><a href="{{ url_for('list_documents') }}">📂 Mijn Documenten</a></li>
+                    <li><a href="{{ url_for('holistic_form') }}" style="background:rgba(246,189,96,0.25);">🧪 Holistisch (proto)</a></li>
 
                     {# Alleen zichtbaar voor beheerders #}
                     {% if session.get('user_role') == 'admin' %}

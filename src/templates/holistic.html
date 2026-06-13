@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Holistische analyse (prototype) - DocuCheck{% endblock %}
+
+{% block content %}
+<style>
+  .holo-card { background:#fff; border-radius:14px; padding:24px; margin-bottom:24px;
+               box-shadow:0 4px 15px rgba(77,144,142,0.12); }
+  .holo-card h2 { color:#4D908E; margin-bottom:14px; }
+  .holo-badge { display:inline-block; padding:2px 8px; border-radius:8px; font-size:0.78em;
+                background:#F9C74F; color:#2B2D42; font-weight:600; margin-left:8px; }
+  .holo-form label { display:block; font-weight:600; margin:14px 0 6px; color:#2B2D42; }
+  .holo-form input[type=file], .holo-form select, .holo-form textarea {
+      width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px;
+      font-family:inherit; font-size:0.95em; }
+  .holo-form textarea { min-height:200px; resize:vertical; }
+  .holo-btn { margin-top:18px; background:linear-gradient(135deg,#4D908E,#52796F); color:#fff;
+              border:none; padding:12px 22px; border-radius:8px; font-size:1em; cursor:pointer;
+              font-weight:600; }
+  .holo-btn:hover { opacity:0.92; }
+  .holo-hint { color:#6C757D; font-size:0.86em; margin-top:4px; }
+  table.holo { width:100%; border-collapse:collapse; margin-top:10px; }
+  table.holo th, table.holo td { text-align:left; padding:8px 10px; border-bottom:1px solid #E9ECEF;
+                                 vertical-align:top; font-size:0.93em; }
+  table.holo th { color:#52796F; }
+  .sev-violation { color:#E63946; font-weight:600; }
+  .sev-warning   { color:#B8860B; font-weight:600; }
+  .sev-info      { color:#4D908E; font-weight:600; }
+  .holo-item { border-left:4px solid #4D908E; padding:8px 14px; margin:10px 0; background:#F8F9FA;
+               border-radius:0 8px 8px 0; }
+  .holo-quote { font-style:italic; color:#495057; border-left:3px solid #CED4DA; padding-left:10px;
+                margin:6px 0; }
+  .holo-warnbox { background:#FFF3CD; border:1px solid #FFE69C; border-radius:8px; padding:12px 16px; }
+  .dl-btn { display:inline-block; background:#52796F; color:#fff; text-decoration:none;
+            padding:12px 20px; border-radius:8px; font-weight:600; }
+</style>
+
+<div class="header" style="margin-bottom:20px;">
+  <h1>Holistische analyse <span class="holo-badge">PROTOTYPE</span></h1>
+  <p>Upload een Word-document en plak de beoordelingsrubric. Eén AI-beoordeling leest
+     het hele document, scoort elk rubric-onderdeel en plaatst feedback als Word-comments
+     op de juiste plek — zonder secties of criteria vooraf te definiëren.</p>
+</div>
+
+<div class="holo-card">
+  <h2>1. Document + rubric</h2>
+  <form class="holo-form" method="POST" action="{{ url_for('holistic_run') }}" enctype="multipart/form-data">
+    <label for="file">Studentdocument (.docx)</label>
+    <input type="file" id="file" name="file" accept=".docx" required>
+    <div class="holo-hint">Alleen .docx — Word-comments kunnen niet in een gescande PDF.</div>
+
+    <label for="product_type">Producttype (beoordelingsformulier)</label>
+    <select id="product_type" name="product_type">
+      {% for pt in product_types %}
+        <option value="{{ pt }}" {% if form and form.product_type == pt %}selected{% endif %}>{{ pt }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="rubric_text">Beoordelingsrubric (plak hier de criteria)</label>
+    <textarea id="rubric_text" name="rubric_text"
+              placeholder="Plak hier de rubric-onderdelen en hun beoordelingscriteria...">{{ form.rubric_text if form else '' }}</textarea>
+    <div class="holo-hint">Tip: kopieer de relevante kolom/onderdelen uit het beoordelingsformulier.</div>
+
+    <button class="holo-btn" type="submit">Analyseren &amp; comments plaatsen</button>
+  </form>
+</div>
+
+{% if result %}
+<div class="holo-card">
+  <h2>2. Resultaat</h2>
+  <p>
+    Model: <strong>{{ result.model }}</strong> &middot;
+    tokens: {{ result.usage.input_tokens }} in / {{ result.usage.output_tokens }} uit &middot;
+    bevindingen geplaatst: <strong>{{ result.placed_count }}</strong>
+    {% if result.unplaced %} &middot; <span class="sev-warning">{{ result.unplaced|length }} niet te plaatsen</span>{% endif %}
+  </p>
+  <p style="margin-top:14px;">
+    <a class="dl-btn" href="{{ url_for('holistic_download', naam=download_name) }}">
+      ⬇️ Download gecommentarieerd document
+    </a>
+  </p>
+</div>
+
+<div class="holo-card">
+  <h2>Scoreoverzicht</h2>
+  <table class="holo">
+    <thead><tr><th>Rubric-onderdeel</th><th>Score</th><th>#bevindingen</th></tr></thead>
+    <tbody>
+      {% for item in result.rubric_items %}
+        <tr>
+          <td>{{ item.naam }}</td>
+          <td>{{ item.score }}</td>
+          <td>{{ (item.findings or [])|length }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="holo-card">
+  <h2>Oordeel per onderdeel</h2>
+  {% for item in result.rubric_items %}
+    <div class="holo-item">
+      <strong>{{ item.naam }}</strong> — {{ item.score }}
+      <p style="margin-top:4px;">{{ item.oordeel }}</p>
+      {% for f in item.findings or [] %}
+        <div class="holo-quote">
+          “{{ f.quote }}”
+          <span class="sev-{{ f.severity }}">[{{ f.severity }}]</span>
+        </div>
+        <div>{{ f.comment }}{% if f.suggestie %} <em>Suggestie: {{ f.suggestie }}</em>{% endif %}</div>
+      {% endfor %}
+    </div>
+  {% endfor %}
+  {% if result.eindbeeld %}
+    <div class="holo-item" style="border-left-color:#52796F;">
+      <strong>Eindbeeld</strong>
+      <p style="margin-top:4px;">{{ result.eindbeeld }}</p>
+    </div>
+  {% endif %}
+</div>
+
+{% if result.unplaced %}
+<div class="holo-card">
+  <h2>Niet-geplaatste bevindingen</h2>
+  <div class="holo-warnbox">
+    Deze bevindingen konden niet aan een exacte passage in het document gekoppeld worden
+    (het citaat week te veel af). Ze staan hier zodat er niets verloren gaat:
+    <ul style="margin-top:8px;">
+      {% for f in result.unplaced %}
+        <li><strong>{{ f.criteria_name }}</strong>: {{ f.message }}
+            <div class="holo-quote">“{{ f.offending_snippet }}”</div></li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

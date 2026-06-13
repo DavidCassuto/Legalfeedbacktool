@@ -53,7 +53,13 @@
             {% endif %}
         {% endwith %}
 
-        <div class="mb-6 flex justify-end">
+        <div class="mb-6 flex justify-between items-center">
+            <div class="flex gap-2 text-sm text-gray-500">
+                Sorteren op:
+                <button onclick="sortTable(0,'num')"  class="px-2 py-1 rounded border hover:bg-gray-100"># ID</button>
+                <button onclick="sortTable(1,'str')"  class="px-2 py-1 rounded border hover:bg-gray-100">Naam A-Z</button>
+                <button onclick="sortTable(2,'str')"  class="px-2 py-1 rounded border hover:bg-gray-100">Type</button>
+            </div>
             <a href="{{ url_for('add_criterion') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-200">
                 Nieuw Criterium Toevoegen
             </a>
@@ -61,21 +67,22 @@
 
         {% if criteria %}
             <div class="overflow-x-auto">
-                <table class="min-w-full bg-white border border-gray-200 rounded-lg shadow-sm table-striped">
+                <table id="criteriaTable" class="min-w-full bg-white border border-gray-200 rounded-lg shadow-sm table-striped">
                     <thead class="bg-gray-100">
                         <tr>
+                            <th class="py-3 px-4 border-b text-left text-sm font-semibold text-gray-600 w-12">#</th>
                             <th class="py-3 px-4 border-b text-left text-sm font-semibold text-gray-600">Naam</th>
                             <th class="py-3 px-4 border-b text-left text-sm font-semibold text-gray-600">Type</th>
                             <th class="py-3 px-4 border-b text-left text-sm font-semibold text-gray-600">Toepassingsgebied</th>
                             <th class="py-3 px-4 border-b text-left text-sm font-semibold text-gray-600">Ernst</th>
                             <th class="py-3 px-4 border-b text-left text-sm font-semibold text-gray-600">Ingeschakeld</th>
-                            <th class="py-3 px-4 border-b text-left text-sm font-semibold text-gray-600">Min/Max Waarde</th>
                             <th class="py-3 px-4 border-b text-left text-sm font-semibold text-gray-600">Acties</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for criterion in criteria %}
                             <tr class="hover:bg-gray-50 transition duration-150 ease-in-out">
+                                <td class="py-3 px-4 border-b text-sm text-gray-400 font-mono">{{ criterion.id }}</td>
                                 <td class="py-3 px-4 border-b text-sm text-gray-700">{{ criterion.name }}</td>
                                 <td class="py-3 px-4 border-b text-sm text-gray-700">{{ criterion.rule_type }}</td>
                                 <td class="py-3 px-4 border-b text-sm text-gray-700">{{ criterion.application_scope }}</td>
@@ -92,13 +99,6 @@
                                 </td>
                                 <td class="py-3 px-4 border-b text-sm text-gray-700">
                                     {% if criterion.is_enabled %}✅{% else %}❌{% endif %}
-                                </td>
-                                <td class="py-3 px-4 border-b text-sm text-gray-700">
-                                    {% if criterion.expected_value_min is not none or criterion.expected_value_max is not none %}
-                                        {{ criterion.expected_value_min if criterion.expected_value_min is not none else 'N/A' }} / {{ criterion.expected_value_max if criterion.expected_value_max is not none else 'N/A' }}
-                                    {% else %}
-                                        -
-                                    {% endif %}
                                 </td>
                                 <td class="py-3 px-4 border-b text-sm">
                                     <a href="{{ url_for('edit_criterion', id=criterion.id) }}" class="text-blue-600 hover:text-blue-800 mr-2">Bewerken</a>
@@ -120,5 +120,19 @@
             <a href="{{ url_for('index') }}" class="text-blue-600 hover:underline">Terug naar Home</a>
         </div>
     </div>
+<script>
+function sortTable(colIndex, type) {
+    const table = document.getElementById('criteriaTable');
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a, b) => {
+        const aVal = a.cells[colIndex]?.innerText.trim() || '';
+        const bVal = b.cells[colIndex]?.innerText.trim() || '';
+        if (type === 'num') return parseInt(aVal) - parseInt(bVal);
+        return aVal.localeCompare(bVal, 'nl');
+    });
+    rows.forEach(r => tbody.appendChild(r));
+}
+</script>
 </body>
 </html>

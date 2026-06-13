@@ -147,11 +147,11 @@
                 </a>
                 
                 <div class="space-x-4">
-                    <button type="reset" 
-                            class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
-                        Herstel
-                    </button>
-                    <button type="submit" 
+                    <a href="{{ url_for('list_sections') }}"
+                       class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 inline-block">
+                        Annuleren
+                    </a>
+                    <button type="submit"
                             class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-200">
                         Wijzigingen Opslaan
                     </button>

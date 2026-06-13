@@ -150,9 +150,30 @@ def initialize_db(conn: sqlite3.Connection):
         )
     """)
 
+    # Tabel: invitation_tokens (voor uitnodigingslinks)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS invitation_tokens (
+            token TEXT PRIMARY KEY,
+            full_name TEXT,
+            role TEXT NOT NULL DEFAULT 'consumer',
+            organization_id INTEGER,
+            created_by INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME NOT NULL,
+            used_at DATETIME,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id),
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+    """)
+
     # --- Migraties: kolommen toevoegen als ze nog niet bestaan ---
     try:
         cursor.execute("ALTER TABLE documents ADD COLUMN uploaded_by INTEGER REFERENCES users(id)")
+    except Exception:
+        pass  # Kolom bestaat al
+
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN first_login INTEGER NOT NULL DEFAULT 1")
     except Exception:
         pass  # Kolom bestaat al
 
@@ -362,6 +383,36 @@ def migrate_db(conn: sqlite3.Connection):
             ('admin', generate_password_hash('admin'), 'admin', 'Beheerder')
         )
 
+    # --- Migratie: invitation_tokens tabel aanmaken als die nog niet bestaat ---
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS invitation_tokens (
+            token TEXT PRIMARY KEY,
+            full_name TEXT,
+            role TEXT NOT NULL DEFAULT 'consumer',
+            organization_id INTEGER,
+            created_by INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME NOT NULL,
+            used_at DATETIME,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id),
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+    """)
+
+    # --- Migratie: first_login kolom in users ---
+    user_columns = [row[1] for row in cursor.execute("PRAGMA table_info(users)").fetchall()]
+    if 'first_login' not in user_columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN first_login INTEGER NOT NULL DEFAULT 1")
+
+    # --- Migratie: document_types tabel uitbreiden ---
+    dt_columns = [row[1] for row in cursor.execute("PRAGMA table_info(document_types)").fetchall()]
+    if 'description' not in dt_columns:
+        cursor.execute("ALTER TABLE document_types ADD COLUMN description TEXT")
+    if 'organization_id' not in dt_columns:
+        cursor.execute("ALTER TABLE document_types ADD COLUMN organization_id INTEGER REFERENCES organizations(id)")
+    if 'default_llm_role_prompt' not in dt_columns:
+        cursor.execute("ALTER TABLE document_types ADD COLUMN default_llm_role_prompt TEXT")
+
     # --- Migratie: uploaded_by kolom in documents ---
     existing_columns = [row[1] for row in cursor.execute("PRAGMA table_info(documents)").fetchall()]
     if 'uploaded_by' not in existing_columns:
@@ -485,10 +536,9 @@ def get_criteria_for_document_type(conn: sqlite3.Connection, document_type_id: i
             c.check_type,
             c.parameters
         FROM criteria c
-        LEFT JOIN document_type_criteria_mappings dtcm ON c.id = dtcm.criteria_id
+        INNER JOIN document_type_criteria_mappings dtcm ON c.id = dtcm.criteria_id
         WHERE c.is_enabled = 1
-          AND (dtcm.document_type_id = ?
-               OR dtcm.document_type_id IS NULL)
+          AND dtcm.document_type_id = ?
     """, (document_type_id,))
     
     criteria_rows = cursor.fetchall()

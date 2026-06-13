@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Welkom bij DocuCheck{% endblock %}
+
+{% block content %}
+<style>
+  .welcome-wrap { max-width: 680px; margin: 40px auto; text-align: center; }
+
+  .welcome-hero {
+    background: linear-gradient(135deg, #4D908E 0%, #52796F 100%);
+    color: white; border-radius: 20px; padding: 48px 40px 40px;
+    margin-bottom: 32px; box-shadow: 0 8px 30px rgba(77,144,142,0.35);
+  }
+  .welcome-logo { font-size: 3.5em; margin-bottom: 12px; }
+  .welcome-hero h1 { font-size: 2em; margin-bottom: 10px; }
+  .welcome-hero p { font-size: 1.05em; opacity: 0.9; max-width: 460px; margin: 0 auto; }
+
+  /* USP kaarten */
+  .usp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-bottom: 32px; }
+  @media (max-width: 600px) { .usp-grid { grid-template-columns: 1fr; } }
+
+  .usp-card {
+    background: white; border-radius: 16px; padding: 28px 20px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.08); border: 2px solid #F0F4F3;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .usp-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(77,144,142,0.18); }
+  .usp-icon { font-size: 2.4em; margin-bottom: 12px; }
+  .usp-title { font-size: 1.05em; font-weight: 700; color: #2B2D42; margin-bottom: 8px; }
+  .usp-desc { font-size: 0.88em; color: #6C757D; line-height: 1.5; }
+
+  /* Stappen */
+  .steps-card {
+    background: white; border-radius: 16px; padding: 28px 32px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.08); margin-bottom: 28px;
+    text-align: left;
+  }
+  .steps-card h3 { font-size: 1.1em; color: #2B2D42; margin-bottom: 18px; text-align: center; }
+  .step-row { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+  .step-num {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: #4D908E; color: white;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.9em; flex-shrink: 0;
+  }
+  .step-text strong { display: block; font-size: 0.95em; color: #2B2D42; margin-bottom: 2px; }
+  .step-text span { font-size: 0.85em; color: #6C757D; }
+
+  .cta-btn {
+    display: inline-block; background: #4D908E; color: white;
+    padding: 16px 40px; border-radius: 50px; font-size: 1.1em; font-weight: 600;
+    text-decoration: none; transition: all 0.3s;
+    box-shadow: 0 4px 15px rgba(77,144,142,0.4);
+  }
+  .cta-btn:hover {
+    background: #52796F; transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(77,144,142,0.45); color: white;
+  }
+
+  .skip-link { margin-top: 14px; font-size: 0.85em; color: #6C757D; }
+  .skip-link a { color: #4D908E; text-decoration: none; }
+</style>
+
+<div class="welcome-wrap">
+
+  <!-- Hero -->
+  <div class="welcome-hero">
+    <div class="welcome-logo">&#128196;</div>
+    <h1>Welkom bij DocuCheck!</h1>
+    <p>Het slimme platform waarmee jij studenten sneller en consistenter van feedback voorziet.</p>
+  </div>
+
+  <!-- USP's -->
+  <div class="usp-grid">
+    <div class="usp-card">
+      <div class="usp-icon">&#9889;</div>
+      <div class="usp-title">Seconden, geen uren</div>
+      <div class="usp-desc">Upload een document en ontvang in seconden een volledige analyse — automatisch, elke keer hetzelfde.</div>
+    </div>
+    <div class="usp-card">
+      <div class="usp-icon">&#9878;</div>
+      <div class="usp-title">Consistente standaard</div>
+      <div class="usp-desc">Elk document wordt aan exact dezelfde criteria getoetst. Geen discussie, geen subjectiviteit.</div>
+    </div>
+    <div class="usp-card">
+      <div class="usp-icon">&#127891;</div>
+      <div class="usp-title">Duidelijk voor studenten</div>
+      <div class="usp-desc">Concrete, actiebare feedback direct in het Word-document. Studenten weten precies wat ze moeten verbeteren.</div>
+    </div>
+  </div>
+
+  <!-- Hoe werkt het -->
+  <div class="steps-card">
+    <h3>Hoe werkt het?</h3>
+    <div class="step-row">
+      <div class="step-num">1</div>
+      <div class="step-text">
+        <strong>Upload een document</strong>
+        <span>Klik op "Upload" in de navigatie en sleep een .docx bestand naar het vak.</span>
+      </div>
+    </div>
+    <div class="step-row">
+      <div class="step-num">2</div>
+      <div class="step-text">
+        <strong>Wacht op de analyse</strong>
+        <span>DocuCheck controleert automatisch alle criteria — structuur, inhoud en taal.</span>
+      </div>
+    </div>
+    <div class="step-row">
+      <div class="step-num">3</div>
+      <div class="step-text">
+        <strong>Bekijk en exporteer de feedback</strong>
+        <span>Bekijk het resultaat in de browser of download het Word-document met inline commentaar.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  <a href="{{ url_for('upload_document') }}" class="cta-btn">Aan de slag &rarr;</a>
+  <div class="skip-link">
+    <a href="{{ url_for('list_documents') }}">Ga naar mijn documenten</a>
+  </div>
+
+</div>
+{% endblock %}

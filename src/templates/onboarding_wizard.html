@@ -1,0 +1,380 @@
+{% extends "base.html" %}
+{% block title %}Nieuwe klant instellen — DocuCheck{% endblock %}
+
+{% block content %}
+<style>
+  .wizard-wrap { max-width: 760px; margin: 0 auto; }
+
+  /* Progress bar */
+  .progress-bar-wrap {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 36px; position: relative;
+  }
+  .progress-bar-wrap::before {
+    content: ''; position: absolute; top: 20px; left: 0; right: 0; height: 3px;
+    background: #E9ECEF; z-index: 0;
+  }
+  .progress-bar-fill {
+    position: absolute; top: 20px; left: 0; height: 3px;
+    background: #4D908E; z-index: 1; transition: width 0.4s ease;
+  }
+  .step-dot {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: #E9ECEF; color: #6C757D;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.95em;
+    position: relative; z-index: 2;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+  }
+  .step-dot.active { background: #4D908E; color: white; box-shadow: 0 0 0 4px rgba(77,144,142,0.25); }
+  .step-dot.done { background: #84A98C; color: white; }
+  .step-label {
+    font-size: 0.72em; color: #6C757D; text-align: center;
+    margin-top: 6px; white-space: nowrap;
+  }
+  .step-item { display: flex; flex-direction: column; align-items: center; }
+
+  /* Steps */
+  .step { display: none; }
+  .step.active { display: block; animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .step-title { font-size: 1.5em; font-weight: 700; color: #2B2D42; margin-bottom: 6px; }
+  .step-subtitle { color: #6C757D; margin-bottom: 24px; }
+
+  /* Toggle buttons (nieuw vs bestaand) */
+  .toggle-group { display: flex; gap: 10px; margin-bottom: 20px; }
+  .toggle-btn {
+    flex: 1; padding: 10px; border: 2px solid #E9ECEF; border-radius: 8px;
+    background: white; cursor: pointer; font-size: 0.95em; font-weight: 500;
+    color: #495057; transition: all 0.2s;
+  }
+  .toggle-btn.active { border-color: #4D908E; background: rgba(77,144,142,0.08); color: #4D908E; }
+
+  /* Sectie-checkboxes */
+  .section-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px; margin-bottom: 24px;
+  }
+  .section-check {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border: 2px solid #E9ECEF; border-radius: 8px;
+    cursor: pointer; transition: all 0.2s; user-select: none;
+  }
+  .section-check:hover { border-color: #4D908E; }
+  .section-check.checked { border-color: #4D908E; background: rgba(77,144,142,0.08); }
+  .section-check input[type=checkbox] { accent-color: #4D908E; width: 16px; height: 16px; }
+
+  /* Niveau badge */
+  .lvl-badge {
+    font-size: 0.7em; padding: 2px 6px; border-radius: 4px;
+    background: #E9ECEF; color: #6C757D; margin-left: auto; white-space: nowrap;
+  }
+
+  /* Uitnodigingslink */
+  .invite-box {
+    background: #F8F9FA; border: 2px solid #4D908E; border-radius: 10px;
+    padding: 18px; margin-top: 20px;
+  }
+  .invite-url {
+    font-family: monospace; font-size: 0.85em; word-break: break-all;
+    color: #2B2D42; background: white; padding: 10px; border-radius: 6px;
+    border: 1px solid #E9ECEF; margin: 10px 0;
+  }
+  .copy-btn {
+    background: #4D908E; color: white; border: none; border-radius: 6px;
+    padding: 8px 16px; cursor: pointer; font-size: 0.9em; transition: background 0.2s;
+  }
+  .copy-btn:hover { background: #52796F; }
+  .copy-btn.copied { background: #84A98C; }
+
+  /* Navigatieknoppen */
+  .wizard-nav { display: flex; justify-content: space-between; margin-top: 28px; gap: 10px; }
+  .btn-prev { background: #E9ECEF; color: #495057; }
+  .btn-prev:hover { background: #DEE2E6; }
+
+  /* Samenvatting stap */
+  .summary-item {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 10px 0; border-bottom: 1px solid #F0F0F0;
+  }
+  .summary-label { font-weight: 600; min-width: 140px; color: #52796F; }
+  .summary-value { color: #2B2D42; }
+
+  /* Done scherm */
+  .done-icon { font-size: 4em; text-align: center; margin: 20px 0 10px; }
+  .done-title { font-size: 1.8em; font-weight: 700; text-align: center; color: #2B2D42; }
+  .done-sub { text-align: center; color: #6C757D; margin-bottom: 28px; }
+</style>
+
+<div class="wizard-wrap">
+  <div class="card">
+
+    <!-- Progress bar -->
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
+      {% set labels = ['Organisatie','Documenttype','Secties','Docent','Klaar'] %}
+      {% for i in range(1,6) %}
+      <div class="step-item">
+        <div class="step-dot" id="dot{{ i }}">{{ i }}</div>
+        <div class="step-label">{{ labels[i-1] }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- ── Stap 1: Organisatie ── -->
+    <div class="step active" id="step1">
+      <div class="step-title">Stap 1 — Organisatie</div>
+      <div class="step-subtitle">Maak een nieuwe organisatie aan of kies een bestaande.</div>
+
+      <div class="toggle-group">
+        <button class="toggle-btn active" id="btnNew1" onclick="setMode('new')">+ Nieuwe organisatie</button>
+        <button class="toggle-btn" id="btnExist1" onclick="setMode('existing')">Kies bestaande</button>
+      </div>
+
+      <div id="newOrgForm">
+        <div class="form-group">
+          <label>Naam organisatie *</label>
+          <input type="text" id="orgName" placeholder="bijv. Hogeschool Utrecht">
+        </div>
+        <div class="form-group">
+          <label>Beschrijving (optioneel)</label>
+          <input type="text" id="orgDesc" placeholder="bijv. HBO-instelling, opleiding Bedrijfskunde">
+        </div>
+      </div>
+
+      <div id="existingOrgForm" style="display:none">
+        <div class="form-group">
+          <label>Selecteer organisatie *</label>
+          <select id="orgSelect">
+            <option value="">-- Kies organisatie --</option>
+            {% for org in organizations %}
+            <option value="{{ org.id }}">{{ org.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="wizard-nav">
+        <span></span>
+        <button class="btn" onclick="saveStep1()">Volgende &rarr;</button>
+      </div>
+    </div>
+
+    <!-- ── Stap 2: Documenttype ── -->
+    <div class="step" id="step2">
+      <div class="step-title">Stap 2 — Documenttype</div>
+      <div class="step-subtitle">Wat voor soort documenten gaan studenten inleveren?</div>
+
+      <div class="form-group">
+        <label>Naam documenttype *</label>
+        <input type="text" id="dtName" placeholder="bijv. Stageverslag, Onderzoeksrapport, Scriptie">
+      </div>
+      <div class="form-group">
+        <label>Beschrijving (optioneel)</label>
+        <input type="text" id="dtDesc" placeholder="bijv. MBO niveau 4, opleiding Zorg & Welzijn">
+      </div>
+
+      <div class="wizard-nav">
+        <button class="btn btn-prev" onclick="goTo(1)">← Terug</button>
+        <button class="btn" onclick="saveStep2()">Volgende &rarr;</button>
+      </div>
+    </div>
+
+    <!-- ── Stap 3: Secties ── -->
+    <div class="step" id="step3">
+      <div class="step-title">Stap 3 — Secties</div>
+      <div class="step-subtitle">Welke secties moeten studenten in hun document opnemen? Kies er minimaal 2.</div>
+
+      <div class="section-grid" id="sectionGrid">
+        {% for sec in sections %}
+        <label class="section-check" id="sec-label-{{ sec.id }}">
+          <input type="checkbox" value="{{ sec.id }}" class="sec-cb" onchange="toggleSectionStyle({{ sec.id }})">
+          <span>{{ sec.name }}</span>
+          {% if sec.level %}
+          <span class="lvl-badge">H{{ sec.level }}</span>
+          {% endif %}
+        </label>
+        {% endfor %}
+      </div>
+
+      <div class="wizard-nav">
+        <button class="btn btn-prev" onclick="goTo(2)">← Terug</button>
+        <button class="btn" onclick="saveStep3()">Volgende &rarr;</button>
+      </div>
+    </div>
+
+    <!-- ── Stap 4: Docent uitnodigen ── -->
+    <div class="step" id="step4">
+      <div class="step-title">Stap 4 — Docent uitnodigen</div>
+      <div class="step-subtitle">Genereer een uitnodigingslink. De docent maakt zelf zijn/haar account aan.</div>
+
+      <div class="form-group">
+        <label>Naam docent (optioneel — wordt vooringevuld in het formulier)</label>
+        <input type="text" id="teacherName" placeholder="bijv. M. Jansen">
+      </div>
+
+      <button class="btn" onclick="generateInvite()">Uitnodigingslink genereren</button>
+
+      <div class="invite-box" id="inviteBox" style="display:none">
+        <div style="font-weight:600; margin-bottom:6px;">Kopieer deze link en stuur hem naar de docent:</div>
+        <div class="invite-url" id="inviteUrl"></div>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <button class="copy-btn" id="copyBtn" onclick="copyInvite()">Kopieer link</button>
+          <span style="font-size:0.85em; color:#6C757D;">Geldig voor 7 dagen</span>
+        </div>
+        <div style="margin-top:10px; font-size:0.85em; color:#52796F;">
+          De docent krijgt een welkomstscherm te zien na zijn/haar eerste login.
+        </div>
+      </div>
+
+      <div class="wizard-nav">
+        <button class="btn btn-prev" onclick="goTo(3)">← Terug</button>
+        <button class="btn" onclick="goTo(5)" id="btnNext4">Volgende &rarr;</button>
+      </div>
+    </div>
+
+    <!-- ── Stap 5: Klaar ── -->
+    <div class="step" id="step5">
+      <div class="done-icon">&#x2705;</div>
+      <div class="done-title">Klant succesvol ingesteld!</div>
+      <div class="done-sub">Hier is een overzicht van wat er is aangemaakt.</div>
+
+      <div id="summary"></div>
+
+      <div style="display:flex; gap:12px; justify-content:center; margin-top:28px; flex-wrap:wrap;">
+        <a href="{{ url_for('list_organizations') }}" class="btn btn-secondary">Organisaties</a>
+        <a href="{{ url_for('list_document_types') }}" class="btn btn-secondary">Documenttypen</a>
+        <a href="{{ url_for('list_users') }}" class="btn">Gebruikers beheren</a>
+        <a href="{{ url_for('onboarding_wizard') }}" class="btn btn-success">Nieuwe klant instellen</a>
+      </div>
+    </div>
+
+  </div><!-- .card -->
+</div><!-- .wizard-wrap -->
+
+<script>
+const STEPS = 5;
+let currentStep = 1;
+let orgId = null, orgName = '', dtId = null, dtName = '', sectionCount = 0, inviteUrl = '';
+let mode1 = 'new';
+
+const progressPct = [0, 0, 25, 50, 75, 100];
+
+function goTo(n) {
+  document.getElementById('step' + currentStep).classList.remove('active');
+  currentStep = n;
+  document.getElementById('step' + currentStep).classList.add('active');
+  updateProgress();
+}
+
+function updateProgress() {
+  document.getElementById('progressFill').style.width = progressPct[currentStep] + '%';
+  for (let i = 1; i <= STEPS; i++) {
+    const dot = document.getElementById('dot' + i);
+    dot.classList.remove('active', 'done');
+    if (i < currentStep) dot.classList.add('done');
+    else if (i === currentStep) dot.classList.add('active');
+  }
+}
+
+function setMode(m) {
+  mode1 = m;
+  document.getElementById('btnNew1').classList.toggle('active', m === 'new');
+  document.getElementById('btnExist1').classList.toggle('active', m === 'existing');
+  document.getElementById('newOrgForm').style.display = m === 'new' ? '' : 'none';
+  document.getElementById('existingOrgForm').style.display = m === 'existing' ? '' : 'none';
+}
+
+function toggleSectionStyle(id) {
+  const cb = document.querySelector('.sec-cb[value="' + id + '"]');
+  const lbl = document.getElementById('sec-label-' + id);
+  lbl.classList.toggle('checked', cb.checked);
+}
+
+async function post(url, body) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+async function saveStep1() {
+  let body;
+  if (mode1 === 'existing') {
+    const sel = document.getElementById('orgSelect').value;
+    if (!sel) return alert('Selecteer een organisatie.');
+    body = { mode: 'existing', org_id: parseInt(sel) };
+  } else {
+    const name = document.getElementById('orgName').value.trim();
+    if (!name) return alert('Naam is verplicht.');
+    body = { mode: 'new', name, description: document.getElementById('orgDesc').value.trim() };
+  }
+  const data = await post('/onboarding/step/1', body);
+  if (!data.ok) return alert(data.error);
+  orgId = data.org_id;
+  orgName = data.org_name;
+  goTo(2);
+}
+
+async function saveStep2() {
+  const name = document.getElementById('dtName').value.trim();
+  if (!name) return alert('Naam is verplicht.');
+  const data = await post('/onboarding/step/2', {
+    name, description: document.getElementById('dtDesc').value.trim(), org_id: orgId
+  });
+  if (!data.ok) return alert(data.error);
+  dtId = data.doc_type_id;
+  dtName = data.doc_type_name;
+  goTo(3);
+}
+
+async function saveStep3() {
+  const ids = Array.from(document.querySelectorAll('.sec-cb:checked')).map(cb => parseInt(cb.value));
+  if (ids.length < 2) return alert('Selecteer minimaal 2 secties.');
+  const data = await post('/onboarding/step/3', { doc_type_id: dtId, section_ids: ids });
+  if (!data.ok) return alert(data.error);
+  sectionCount = ids.length;
+  goTo(4);
+}
+
+async function generateInvite() {
+  const data = await post('/onboarding/step/4', {
+    full_name: document.getElementById('teacherName').value.trim(),
+    org_id: orgId
+  });
+  if (!data.ok) return alert(data.error);
+  inviteUrl = data.invite_url;
+  document.getElementById('inviteUrl').textContent = inviteUrl;
+  document.getElementById('inviteBox').style.display = '';
+}
+
+function copyInvite() {
+  navigator.clipboard.writeText(inviteUrl).then(() => {
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = 'Gekopieerd!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Kopieer link'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// Stap 5 — samenvatting opbouwen
+document.getElementById('btnNext4').addEventListener('click', buildSummary);
+function buildSummary() {
+  const rows = [
+    ['Organisatie', orgName],
+    ['Documenttype', dtName],
+    ['Secties gekoppeld', sectionCount + ' secties'],
+    ['Uitnodigingslink', inviteUrl ? 'Aangemaakt' : 'Overgeslagen'],
+  ];
+  document.getElementById('summary').innerHTML = rows.map(([label, val]) =>
+    `<div class="summary-item"><span class="summary-label">${label}</span><span class="summary-value">${val || '—'}</span></div>`
+  ).join('');
+}
+
+updateProgress();
+</script>
+{% endblock %}

@@ -7,7 +7,7 @@ Regels:
 - Alles behalve status 'ok' krijgt een comment (ook 'info', 'warning', 'violation', 'error').
 - Als de afwijking te herleiden is tot een sub-paragraaf (H2/H3), wordt het comment
   ALLEEN daar geplaatst, NIET nogmaals bij de hogere sectie (H1).
-- Meerdere afwijkingen in dezelfde paragraaf worden gecombineerd in één comment.
+- Elke afwijking krijgt een eigen comment, verankerd aan de kortst mogelijke tekst.
 
 Technische aanpak (vermijdt 'unreadable content' in Word):
 - Alle originele bestanden worden ONGEWIJZIGD overgenomen uit het originele docx.
@@ -188,31 +188,105 @@ def _find_target_paragraph_idx(
                          section_name, heading_idx, best_score)
 
     if heading_idx is None:
-        return 0, 'document'
+        # Geen sectie-heading gevonden (bijv. document_only criterium).
+        # Als er een snippet is: zoek door het hele document.
+        # Anders: val terug op paragraaf 0.
+        if offending_snippet and len(offending_snippet.strip()) >= 5:
+            section_items = para_structure  # heel document doorzoeken
+        else:
+            return 0, 'document'
+    else:
+        section_level = para_structure[heading_idx]['level']
+        section_end = len(para_structure)
+        for item in para_structure:
+            if (item['idx'] > heading_idx
+                    and item['is_heading']
+                    and item['level'] <= section_level):
+                section_end = item['idx']
+                break
 
-    section_level = para_structure[heading_idx]['level']
-    section_end = len(para_structure)
-    for item in para_structure:
-        if (item['idx'] > heading_idx
-                and item['is_heading']
-                and item['level'] <= section_level):
-            section_end = item['idx']
-            break
-
-    section_items = [
-        it for it in para_structure
-        if heading_idx <= it['idx'] < section_end
-    ]
+        section_items = [
+            it for it in para_structure
+            if heading_idx <= it['idx'] < section_end
+        ]
 
     if offending_snippet and len(offending_snippet.strip()) >= 5:
         snippet_lower = re.sub(r'\s+', ' ', offending_snippet.lower().strip())
 
+        # Poging 1: exacte substring-match (snippet volledig in één paragraaf)
         match_idx = None
         for item in section_items:
+            if item['is_heading']:
+                continue
             item_text = re.sub(r'\s+', ' ', item['text'].lower())
             if snippet_lower in item_text:
                 match_idx = item['idx']
                 break
+
+        # Poging 2: prefix-match (eerste 60 tekens van snippet)
+        # Bruikbaar als de citaat over een paragraafgrens loopt of door whitespace
+        # of speciale tekens net iets afwijkt van p.text.
+        if match_idx is None:
+            prefix = snippet_lower[:60].strip()
+            if len(prefix) >= 15:
+                for item in section_items:
+                    if item['is_heading']:
+                        continue
+                    item_text = re.sub(r'\s+', ' ', item['text'].lower())
+                    if prefix in item_text:
+                        match_idx = item['idx']
+                        logger.debug(
+                            "Prefix-match voor snippet '%s...' → para %d",
+                            prefix[:30], item['idx']
+                        )
+                        break
+
+        # Poging 3: woordoverlap-match (voor AI-citaten die enigszins afwijken van p.text)
+        # Pak de significante woorden (≥5 tekens) uit het snippet en zoek de paragraaf
+        # met de meeste overeenkomsten.
+        # Regel: sectie-lokale matches hebben ABSOLUTE prioriteit over document-brede matches.
+        # Alleen als er GEEN sectie-lokale match is (< 0.35), wordt document-breed geprobeerd.
+        # Dit voorkomt dat een comment van sectie A in sectie B (bijv. Hoofd- en Deelvragen)
+        # belandt omdat die sectie toevallig meer woorden deelt met het snippet.
+        if match_idx is None:
+            def _sig_words_snippet(text: str) -> List[str]:
+                return [w for w in re.sub(r'[^\w]', ' ', text.lower()).split()
+                        if len(w) >= 5 and not w.isdigit()]
+
+            snip_words = _sig_words_snippet(snippet_lower)
+            if len(snip_words) >= 3:
+
+                def _best_overlap(items):
+                    best_score, best_idx = 0, None
+                    for item in items:
+                        if item['is_heading']:
+                            continue
+                        item_words = set(_sig_words_snippet(item['text']))
+                        score = sum(1 for w in snip_words if w in item_words)
+                        norm_score = score / len(snip_words)
+                        if norm_score > best_score and score >= 3:
+                            best_score = norm_score
+                            best_idx = item['idx']
+                    return best_score, best_idx
+
+                # Eerst sectie-lokaal
+                sec_score, sec_idx = _best_overlap(section_items)
+                if sec_idx is not None and sec_score >= 0.35:
+                    match_idx = sec_idx
+                    logger.debug(
+                        "Sectie woord-overlap match (score=%.0f%%) voor snippet '%s...' → para %d",
+                        sec_score * 100, snippet_lower[:30], sec_idx
+                    )
+                else:
+                    # Fallback: document-breed (alleen als sectie-lokaal niets vond)
+                    outside_items = [it for it in para_structure if it not in section_items]
+                    doc_score, doc_idx = _best_overlap(outside_items)
+                    if doc_idx is not None and doc_score >= 0.35:
+                        match_idx = doc_idx
+                        logger.debug(
+                            "Document-breed woord-overlap match (score=%.0f%%) voor snippet '%s...' → para %d",
+                            doc_score * 100, snippet_lower[:30], doc_idx
+                        )
 
         if match_idx is not None:
             matched = para_structure[match_idx]
@@ -221,7 +295,7 @@ def _find_target_paragraph_idx(
                 # Niet doorsturen naar een sub-heading: de comment hoort bij de alinea zelf.
                 return matched['idx'], f"paragraaf in '{section_name}'"
 
-    return heading_idx, f"sectie '{section_name}'"
+    return heading_idx if heading_idx is not None else 0, f"sectie '{section_name}'"
 
 
 # ---------------------------------------------------------------------------
@@ -304,12 +378,29 @@ def _place_markers_around_snippet(
 # (GEEN python-docx save → originele bestanden blijven intact)
 # ---------------------------------------------------------------------------
 
+def _shortest_anchor(snippet: str, min_len: int = 20, max_len: int = 80) -> str:
+    """
+    Geeft de kortst mogelijke maar nog herkenbare ankertekst uit het snippet:
+    - Eerste zin (eindigend op . ? ! gevolgd door spatie of einde), minimaal min_len tekens
+    - Als er geen zinseinde is: eerste max_len tekens
+    """
+    if not snippet:
+        return snippet
+    s = snippet.strip()
+    # Eerste zin die lang genoeg is
+    m = re.search(r'^.{' + str(min_len) + r',}?[.?!](?=\s|$)', s)
+    if m:
+        return m.group(0)[:max_len]
+    return s[:max_len]
+
+
 def _add_markers_to_doc_xml(
     doc_xml_bytes: bytes,
-    para_groups: Dict[int, List[Dict]],
+    items_list: List[Tuple[int, Dict]],
 ) -> Tuple[bytes, List[Tuple[int, str, str]]]:
     """
     Parseer document.xml met lxml, voeg comment markers toe en serialiseer terug.
+    Elk feedbackitem krijgt zijn eigen aparte comment, verankerd aan zijn eigen snippet.
 
     Gebruikt body.findall('{w}p') zodat de indices overeenkomen met
     python-docx doc.paragraphs (beide zijn directe kinderen van w:body).
@@ -362,25 +453,69 @@ def _add_markers_to_doc_xml(
             parent.remove(el)
     logger.debug("%d bestaande comment marker(s) verwijderd uit document.xml", len(_to_remove))
 
-    for para_idx in sorted(para_groups.keys()):
-        items = para_groups[para_idx]
+    # Groepeer items op ANKERTEKST (genormaliseerd op 60 tekens):
+    # - Meerdere items die DEZELFDE zin/tekst aanwijzen → één comment (samenvoegen)
+    # - Items die VERSCHILLENDE zinnen aanwijzen → elk een eigen comment
+    # De onderscheidende factor is de ankertekst, NIET de paragraaf.
+    # Zo krijgen bijv. drie deelvragen elk hun eigen comment (elk een andere zin),
+    # maar twee opmerkingen over dezelfde korte hoofdvraag-zin worden samengevoegd.
+
+    # Stap A: bereken per item de anchor en normaliseer als groeperingssleutel
+    from collections import OrderedDict
+    keyed: List[Tuple[str, int, str, Dict]] = []  # (anchor_key, para_idx, anchor, fi)
+    for para_idx, fi in items_list:
+        raw = fi.get('offending_snippet', '')
+        anchor = _shortest_anchor(raw) if raw else ''
+        # Normaliseer: lowercase, witruimte samenvoegen, eerste 60 tekens
+        key = re.sub(r'\s+', ' ', anchor.lower().strip())[:60] if anchor else f'__para_{para_idx}__'
+        keyed.append((key, para_idx, anchor, fi))
+        logger.debug(
+            "GROEP-KEY: criteria=%s | para=%d | key=%r | anchor=%r",
+            fi.get('criteria_name', '?'), para_idx, key, anchor[:50] if anchor else ''
+        )
+
+    # Stap B: groepeer op (anchor_key, para_idx) — zelfde zin op zelfde paragraaf = samen.
+    # Extra: als twee items op dezelfde para_idx staan en hun anchor_key een prefix-overlap
+    # hebben van ≥30 tekens, worden ze ook samengevoegd (vangt licht verschillende citaten op).
+    groups: OrderedDict = OrderedDict()
+
+    def _find_existing_group(anchor_key: str, para_idx: int) -> Optional[tuple]:
+        """Zoek een bestaande groep op dezelfde para_idx met voldoende ankeroverlap."""
+        prefix = anchor_key[:30]
+        if len(prefix) < 15:
+            return None
+        for gk in groups:
+            if gk[1] == para_idx and gk[0].startswith(prefix):
+                return gk
+        return None
+
+    for anchor_key, para_idx, anchor, fi in keyed:
+        existing = _find_existing_group(anchor_key, para_idx)
+        if existing:
+            groups[existing]['items'].append(fi)
+        else:
+            group_key = (anchor_key, para_idx)
+            if group_key not in groups:
+                groups[group_key] = {'para_idx': para_idx, 'anchor': anchor, 'items': []}
+            groups[group_key]['items'].append(fi)
+
+    logger.debug("TOTAAL GROEPEN: %d (uit %d items)", len(groups), len(keyed))
+
+    # Stap C: één comment per groep
+    for group_key, grp in groups.items():
+        para_idx = grp['para_idx']
+        anchor   = grp['anchor']
+        group    = grp['items']
+
         if para_idx >= len(body_paras):
             continue
 
         p_el   = body_paras[para_idx]
         id_str = str(comment_id)
 
-        # Zoek het eerste offending_snippet uit de feedback items voor deze paragraaf
-        snippet = None
-        for fi in items:
-            s = fi.get('offending_snippet')
-            if s and len(s.strip()) >= 5:
-                snippet = s.strip()
-                break
-
         placed = False
-        if snippet:
-            placed = _place_markers_around_snippet(p_el, id_str, snippet)
+        if anchor and len(anchor.strip()) >= 5:
+            placed = _place_markers_around_snippet(p_el, id_str, anchor.strip())
 
         if not placed:
             # Fallback: markers rond de hele paragraaf
@@ -403,17 +538,23 @@ def _add_markers_to_doc_xml(
         ref      = etree.SubElement(ref_run, f'{{{W_NS}}}commentReference')
         ref.set(f'{{{W_NS}}}id', id_str)
 
-        # -- Bouw commenttekst --
+        # -- Commenttekst: items samenvoegen als meerdere, anders enkelvoudig --
         lines: List[str] = []
-        for fi in items:
-            name = fi.get('criteria_name') or fi.get('criterion_name', 'Criterium')
-            msg  = fi.get('message', '')
-            sug  = fi.get('suggestion', '')
-            lines.append(f"{name}: {msg}")
+        for fi in group:
+            msg = fi.get('message', '')
+            sug = fi.get('suggestion', '')
+            check_type = fi.get('check_type', '')
+            has_snippet = bool((fi.get('offending_snippet') or '').strip())
+            if msg:
+                # Voeg "(AI - geen citaat)" toe voor LLM-feedback zonder verifieerbaar citaat
+                if check_type in ('llm_review', 'holistic') and not has_snippet:
+                    lines.append(f"{msg}\n(AI - geen citaat)")
+                else:
+                    lines.append(msg)
             if sug:
                 lines.append(f"Suggestie: {sug}")
 
-        comments_data.append((comment_id, '\n'.join(lines), 'FeedbackTool'))
+        comments_data.append((comment_id, '\n\n'.join(lines), 'FeedbackTool'))
         comment_id += 1
 
     # Herserializeer ALLEEN document.xml (alle andere bestanden blijven ongewijzigd)
@@ -518,11 +659,15 @@ def add_inline_comments(
         base, ext   = os.path.splitext(original_docx_path)
         output_path = f"{base}_gecommentarieerd{ext}"
 
-    # Filter: alles behalve 'ok' en None krijgt een comment.
-    # 'info' items zijn informatief maar relevant genoeg voor een Word-opmerking.
+    # Filter: 'violation', 'warning' en 'info' krijgen een Word-comment.
+    # Uitgesloten:
+    #   - 'ok' items (geslaagd)
+    #   - tool-fouten (confidence == 0.0): dit zijn interne foutmeldingen over
+    #     mislukte LLM-calls, geen pedagogische feedback voor de student.
     active = [
         fi for fi in feedback_items
-        if fi.get('status') not in ('ok', None, '')
+        if fi.get('status') in ('violation', 'warning', 'info', 'error')
+        and fi.get('confidence', 1.0) > 0.0
     ]
 
 
@@ -543,12 +688,11 @@ def add_inline_comments(
         if s.get('heading_text') and s.get('name')
     }
 
-    # Stap 2: groepeer feedback per doel-paragraaf
-    # Dedupliceer op (criteria_id, snippet_tekst): hetzelfde criterium op dezelfde
-    # alinea via zowel parent-sectie als sub-sectie geeft identieke snippet-tekst.
-    # Items ZONDER snippet (bijv. meerdere AI-problemen) worden nooit weggefilterd —
-    # die hebben allemaal een eigen citaat en moeten allemaal zichtbaar blijven.
-    para_groups: Dict[int, List[Dict]] = {}
+    # Stap 2: bepaal per feedbackitem de doelplaats (paragraaf-index)
+    # Elk item krijgt zijn eigen comment → geen groepering meer.
+    # Dedupliceer op (criteria_id, snippet): hetzelfde criterium + snippet via
+    # zowel parent- als sub-sectie geeft anders twee identieke comments.
+    items_list: List[Tuple[int, Dict]] = []
     seen_snippet_keys: set = set()
     for fi in active:
         snippet = fi.get('offending_snippet')
@@ -568,9 +712,9 @@ def add_inline_comments(
         logger.debug("Route: %s → para %d (%s)",
                      fi.get('criteria_name') or fi.get('criterion_name', '?'),
                      para_idx, loc)
-        para_groups.setdefault(para_idx, []).append(fi)
+        items_list.append((para_idx, fi))
 
-    if not para_groups:
+    if not items_list:
         logger.warning("Geen doelrefs gevonden voor feedback items.")
         shutil.copy2(original_docx_path, output_path)
         return output_path
@@ -626,7 +770,7 @@ def add_inline_comments(
 
     # Stap 4: pas document.xml aan via lxml (alle andere bestanden blijven intact)
     new_doc_xml, comments_data = _add_markers_to_doc_xml(
-        all_files['word/document.xml'], para_groups
+        all_files['word/document.xml'], items_list
     )
     all_files['word/document.xml'] = new_doc_xml
 

@@ -29,7 +29,7 @@ def _words_overlap(set_a: set, set_b: set) -> int:
             if len(wb) < 5:
                 continue
             prefix_len = min(len(wa), len(wb))
-            if wa[:prefix_len] == wb[:prefix_len] or wb.startswith(wa[:5]) or wa.startswith(wb[:5]):
+            if wa[:prefix_len] == wb[:prefix_len] or wb.startswith(wa[:6]) or wa.startswith(wb[:6]):
                 prefix_matches += 1
                 break
     return len(exact) + prefix_matches
@@ -71,6 +71,7 @@ def recognize_and_enrich_sections(
         - 'parent_id': Het ID van de parent sectie (uit DB)
     """
     recognized_sections_list = []
+    formatting_warnings = []   # Misformateerde headings (bodytekst met heading-stijl)
 
     # Maak een dictionary van expected_sections_metadata voor snelle lookup op identifier.
     # Zorg ook dat alternative_names altijd een Python-lijst is (de DB slaat het op als JSON-string).
@@ -88,7 +89,17 @@ def recognize_and_enrich_sections(
         expected_sections_dict[s_dict['identifier']] = s_dict
 
     # Sorteer headings op start_char voor sequentiële verwerking
-    sorted_headings = sorted(all_headings, key=lambda x: x['start_char'])
+    # Filter bodytekst met verkeerde heading-stijl eruit (>15 woorden = geen echte heading)
+    # zodat ze ook de sectiegrenzen niet verstoren
+    real_headings = []
+    for h in sorted(all_headings, key=lambda x: x['start_char']):
+        h_cleaned = re.sub(r'^\s*\d+(\.\d+)*\.?\s*', '', h['text'].lower()).strip()
+        h_cleaned = re.sub(r'^(hoofdstuk|bijlage|appendix|sectie)\s*[\d.]*\s*', '', h_cleaned, flags=re.IGNORECASE).strip()
+        if len(h_cleaned.split()) > 15:
+            print(f"  [PRE-FILTER] Heading genegeerd (bodytekst met verkeerde opmaak, {len(h_cleaned.split())} woorden): '{h['text'][:60]}...'")
+        else:
+            real_headings.append(h)
+    sorted_headings = real_headings
 
     # Map om de gevonden secties op hun identifier bij te houden, inclusief hun grenzen
     found_sections_boundaries = {} # {identifier: {'start_char': X, 'end_char': Y, 'heading_level': Z, 'primary_heading_text': 'XYZ'}}
@@ -112,13 +123,14 @@ def recognize_and_enrich_sections(
 
         # Verbeterde opschoonlogica voor kopteksten
         # Stap 1: Verwijder voorloopnummering (e.g., "1.", "1.1.", "1.2.3 ")
-        cleaned_heading_text = re.sub(r'^\s*\d+(\.\d+)*\s*', '', heading_text_lower).strip()
+        cleaned_heading_text = re.sub(r'^\s*\d+(\.\d+)*\.?\s*', '', heading_text_lower).strip()
         
         # Stap 2: Verwijder algemene hoofdstuk/bijlage-prefixen ALLEEN als er daarna nog tekst volgt
         # Dit voorkomt dat "Hoofdstuk 4" een lege string wordt.
         chapter_prefix_regex = r'^(?:hoofdstuk|bijlage)\s+\d+\s*[:\.]?\s*'
         match_prefix = re.match(chapter_prefix_regex, cleaned_heading_text, re.IGNORECASE)
-        
+        remaining_content = ''  # default; wordt ingevuld als er een hoofdstuk-prefix is
+
         if match_prefix:
             # Als er na de prefix nog inhoud is (group(1) is alles na de match), gebruik dan die inhoud
             remaining_content = cleaned_heading_text[match_prefix.end():].strip()
@@ -129,6 +141,21 @@ def recognize_and_enrich_sections(
             # Dit is de gewenste situatie om te matchen met 'Hoofdstuk Algemeen'.
         
         print(f"  Gereinigde koptekst: '{cleaned_heading_text}'")
+
+        # Detecteer samengestelde nummering (bv. "3.1.", "2.4.1.") — dit is een sub-heading
+        # die NIET via alias/fuzzy mag matchen op een top-level sectie
+        _has_compound_number = bool(re.match(r'^\s*\d+\.\d+', heading['text']))
+
+        # LENGTEFILTER: teksten langer dan 15 woorden zijn geen echte headings
+        # maar bodytekst die per ongeluk een heading-stijl heeft gekregen in Word.
+        if len(cleaned_heading_text.split()) > 15:
+            preview = heading.get('text', cleaned_heading_text)[:80]
+            print(f"  --> GENEGEERD: tekst heeft {len(cleaned_heading_text.split())} woorden (>15), waarschijnlijk bodytekst met verkeerde opmaak.")
+            formatting_warnings.append({
+                'type': 'misformatted_heading',
+                'text_preview': preview,
+            })
+            continue
 
         # VERBETERDE MATCHING LOGICA:
         # Prioriteit 1: Exacte match van de gereinigde koptekst met identifier of naam
@@ -152,11 +179,35 @@ def recognize_and_enrich_sections(
                         # Sla lege of alleen-witruimte aliassen over om vals-positieve matches te voorkomen
                         if not alias.strip():
                             continue
-                        # AANGEPAST: re.search ipv re.fullmatch om deelmatches toe te staan
-                        # En zorg ervoor dat de alias als heel woord wordt gematcht
-                        if re.search(r'\b' + re.escape(alias.lower()) + r'\b', cleaned_heading_text):
+                        alias_lower = alias.lower()
+                        # Check 1: exacte woordgrens-match (bijv. 'methode' in 'methode juridisch')
+                        exact = re.search(r'\b' + re.escape(alias_lower) + r'\b', cleaned_heading_text)
+                        # Check 2: prefix-match voor meervouds-/verbuigingsvormen
+                        # bijv. alias='onderzoeksmethode' matcht 'onderzoeksmethoden'
+                        # Alleen richting: heading-woord begint met de alias (NIET omgekeerd)
+                        # — zo voorkomt 'onderzoeksvragen'.startswith('onderzoek') valse matches
+                        # Minimale aliaslengte van 7 tekens om korte aliassen uit te sluiten
+                        prefix = False
+                        if not exact and len(alias_lower) >= 7:
+                            heading_words = cleaned_heading_text.split()
+                            prefix = any(
+                                word.startswith(alias_lower)
+                                for word in heading_words
+                                if len(word) >= 7
+                            )
+                        if exact or prefix:
+                            # Niveau-compatibiliteitscheck: een sub-heading met samengestelde
+                            # nummering (bv. "3.1. Inleiding") mag NIET via alias matchen
+                            # op een top-level sectie (verwacht niveau 1).
+                            _expected_lvl = es_data.get('level', 0)
+                            if (_has_compound_number and _expected_lvl > 0
+                                    and heading_level_parsed > _expected_lvl):
+                                print(f"  --> Alias match GENEGEERD: sub-heading niveau {heading_level_parsed} "
+                                      f"is incompatibel met sectie '{es_data['name']}' op niveau {_expected_lvl}.")
+                                continue
                             matched_identifier = es_id
-                            print(f"  --> MATCH (alias) op '{es_data['name']}' via alias '{alias}'.")
+                            match_type = 'alias' if exact else 'alias (prefix-match)'
+                            print(f"  --> MATCH ({match_type}) op '{es_data['name']}' via alias '{alias}'.")
                             break
                 if matched_identifier:
                     break # Als een match gevonden is, stop met zoeken voor deze heading
@@ -194,32 +245,79 @@ def recognize_and_enrich_sections(
                             best_id = es_id
                             best_name = es_data['name']
                 if best_id:
-                    matched_identifier = best_id
-                    print(f"  --> FUZZY MATCH (woord-overlap {best_ratio:.0%}) op '{best_name}'.")
+                    # Niveau-compatibiliteitscheck ook voor fuzzy matches
+                    _best_expected_lvl = expected_sections_dict[best_id].get('level', 0)
+                    if (_has_compound_number and _best_expected_lvl > 0
+                            and heading_level_parsed > _best_expected_lvl):
+                        print(f"  --> Fuzzy match GENEGEERD: sub-heading niveau {heading_level_parsed} "
+                              f"is incompatibel met sectie '{best_name}' op niveau {_best_expected_lvl}.")
+                    else:
+                        matched_identifier = best_id
+                        print(f"  --> FUZZY MATCH (woord-overlap {best_ratio:.0%}) op '{best_name}'.")
         
         if matched_identifier:
             start_char = heading['start_char']
-            
-            # Bepaal het einde van de sectie: tot de start van de volgende heading van gelijk of hoger niveau
-            end_char = len(doc_content) # Standaard: einde van het document
-            
+
+            # Bepaal het einde van de sectie.
+            # Regel: een sectie eindigt bij de volgende koptekst die:
+            #   (a) een HOGER niveau heeft (lager getal, bv. H1 na H2), OF
+            #   (b) hetzelfde niveau heeft ÉN een numeriek/hoofdstuk-prefix heeft
+            #       (bv. "1.4 Doelstelling" of "Hoofdstuk 2 ...").
+            # Onnummerde koppen van hetzelfde niveau (bv. "Hoofdvraag", "Output")
+            # worden OVERGESLAGEN — zij zijn sub-koppen binnen de huidige sectie.
+            end_char = len(doc_content)
+
+            def _heading_has_structure(h_text: str) -> bool:
+                """True als deze koptekst een genummerd of hoofdstuk-prefix heeft."""
+                return bool(
+                    re.match(r'^\s*\d+[\.\s]', h_text) or
+                    re.match(r'^(Hoofdstuk|Bijlage|Appendix)\s+\d+', h_text, re.IGNORECASE)
+                )
+
             for j in range(i + 1, len(sorted_headings)):
                 next_heading = sorted_headings[j]
-                # Een sectie eindigt wanneer een kop van hetzelfde of een hoger niveau begint.
-                # Bijvoorbeeld, H1 eindigt bij de volgende H1. H2 eindigt bij de volgende H2 of een H1.
-                if next_heading['level'] <= heading_level_parsed:
+                if next_heading['level'] < heading_level_parsed:
+                    # Hoger niveau (bijv. H1 na H2) — altijd sectie-einde
                     end_char = next_heading['start_char']
                     break
-            
+                elif next_heading['level'] == heading_level_parsed:
+                    # Zelfde niveau — alleen einde als de koptekst gestructureerd is
+                    if _heading_has_structure(next_heading['text']):
+                        end_char = next_heading['start_char']
+                        break
+                    # Onnummerd zelfde-niveau kopje → doorzoeken (sub-kop van huidige sectie)
+
+            # Bepaal of deze match via een hoofdstuktitel tot stand is gekomen
+            # (bv. "Hoofdstuk 1 Inleiding" → gereduceerd tot "inleiding").
+            # Zulke matches zijn PROVISIONEEL: een specifiekere sub-koptekst
+            # (bv. "1.1 Inleiding") mag ze later overschrijven.
+            _is_provisional = bool(match_prefix and remaining_content)
+
             if matched_identifier not in found_sections_boundaries:
-                # Sla alleen de eerste match op; latere matches voor dezelfde sectie worden genegeerd
                 found_sections_boundaries[matched_identifier] = {
                     'start_char': start_char,
                     'end_char': end_char,
-                    'heading_level': heading_level_parsed, # Gebruik het geparsede niveau hier
-                    'primary_heading_text': heading['text'] # Hoofd-heading van deze sectie
+                    'heading_level': heading_level_parsed,
+                    'primary_heading_text': heading['text'],
+                    'provisional': _is_provisional,
                 }
-                print(f"  Sectie '{expected_sections_dict[matched_identifier]['name']}' gedefinieerd van char {start_char} tot {end_char} (geparsed level: {heading_level_parsed}).")
+                prov_label = ' [PROVISIONEEL]' if _is_provisional else ''
+                print(f"  Sectie '{expected_sections_dict[matched_identifier]['name']}' gedefinieerd van char {start_char} tot {end_char} (geparsed level: {heading_level_parsed}){prov_label}.")
+            elif (found_sections_boundaries[matched_identifier].get('provisional')
+                  and not _is_provisional
+                  and start_char < found_sections_boundaries[matched_identifier]['end_char']):
+                # Overschrijf een provisorische hoofdstuktitel-match met een specifiekere koptekst
+                # die BINNEN de char-range van de provisorische match valt (zelfde hoofdstuk).
+                # Kopteksten buiten die range (bijv. "2.1 Inleiding" na "Hoofdstuk 1 Inleiding")
+                # worden NIET als override beschouwd.
+                found_sections_boundaries[matched_identifier] = {
+                    'start_char': start_char,
+                    'end_char': end_char,
+                    'heading_level': heading_level_parsed,
+                    'primary_heading_text': heading['text'],
+                    'provisional': False,
+                }
+                print(f"  Sectie '{expected_sections_dict[matched_identifier]['name']}' provisorische match overschreven door specifiekere koptekst '{heading['text']}'.")
             else:
                 print(f"  Sectie '{expected_sections_dict[matched_identifier]['name']}' al eerder gevonden; huidige koptekst wordt genegeerd.")
         else:
@@ -281,4 +379,4 @@ def recognize_and_enrich_sections(
     # Sorteer de uiteindelijke lijst op order_index en dan op level voor een logische weergave in de UI
     recognized_sections_list.sort(key=lambda x: (x.get('order_index', 999), x.get('level', 999)))
 
-    return recognized_sections_list
+    return recognized_sections_list, formatting_warnings

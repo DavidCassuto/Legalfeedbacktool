@@ -66,63 +66,112 @@ def parse_document(file_path: str) -> tuple[str, list[str], list[dict]]:
 
     elif file_path.endswith('.docx'):
         doc = Document(file_path)
-        
+
         # Reset current_char_offset voor docx, want full_text wordt hier opgebouwd
-        current_char_offset = 0 
-        
-        for para in doc.paragraphs:
-            para_text = para.text # Ruwe tekst van de paragraaf
+        current_char_offset = 0
+
+        # Helper: verwerk één paragraaf-object
+        def _verwerk_para(para):
+            nonlocal full_text, current_char_offset
+            para_text = para.text
             paragraphs.append(para_text.strip())
 
-            # Bepaal stijltype VOORDAT we toevoegen aan full_text
             style_name = para.style.name if para.style else 'Normal'
             is_heading = style_name.startswith('Heading')
-            is_empty = not para_text.strip()
+            is_empty   = not para_text.strip()
 
             if is_heading or is_empty:
-                # Koppen en lege regels krijgen GEEN dubbele newline
-                # → worden niet herkend als alinea bij paragraaf-lengte-check
                 full_text += para_text + '\n'
             else:
-                # Normale inhoudelijke alinea → dubbele newline als alinea-scheidingsteken
                 full_text += para_text + '\n\n'
 
-            # Docx headings hebben een ingebouwde stijl-informatie
             if is_heading:
                 try:
                     level = int(para.style.name.replace('Heading ', ''))
                 except ValueError:
-                    level = 1 # Fallback als de stijl niet 'Heading X' is, maar wel een Heading
-                
-                # Zoek de exacte start/end chars van de heading in de full_text
-                # Gebruik de current_char_offset om dubbele matches te voorkomen en sneller te zoeken
+                    level = 1
                 start_char_candidate = full_text.find(para_text, current_char_offset)
-                if start_char_candidate != -1: # Zorg dat de tekst gevonden is
+                if start_char_candidate != -1:
                     start_char = start_char_candidate
-                    end_char = start_char + len(para_text)
+                    end_char   = start_char + len(para_text)
                     all_headings.append({
                         'text': para_text.strip(),
                         'level': level,
                         'start_char': start_char,
                         'end_char': end_char
                     })
-                    # Update current_char_offset om te voorkomen dat dezelfde tekst opnieuw wordt gevonden
-                    current_char_offset = end_char 
+                    current_char_offset = end_char
                 else:
-                    # Als de heading text om een of andere reden niet direct gevonden wordt
-                    # (bijv. door whitespace verschillen), schat de positie dan.
                     print(f"Waarschuwing: Kon heading '{para_text[:30]}' niet exact vinden in full_text. Schat positie.")
                     all_headings.append({
                         'text': para_text.strip(),
                         'level': level,
-                        'start_char': current_char_offset, # Neem huidige offset als start
+                        'start_char': current_char_offset,
                         'end_char': current_char_offset + len(para_text)
                     })
-                    current_char_offset += len(para_text) + 1 # Update met lengte van para + newline
-
-            # Als het geen heading is, update alleen de current_char_offset voor de volgende iteratie
+                    current_char_offset += len(para_text) + 1
             else:
-                current_char_offset += len(para_text) + 1 # +1 voor de toegevoegde newline
+                current_char_offset += len(para_text) + 1
+
+        # Helper: verwerk een tabel — voeg cel-tekst toe als leesbare blokken
+        def _verwerk_tabel(tabel):
+            nonlocal full_text, current_char_offset
+            for rij in tabel.rows:
+                cel_teksten = [cel.text.strip() for cel in rij.cells]
+                # Dedupleer samengevoegde cellen (python-docx herhaalt merged cells)
+                uniek = []
+                for t in cel_teksten:
+                    if not uniek or t != uniek[-1]:
+                        uniek.append(t)
+                rij_tekst = ' | '.join(t for t in uniek if t)
+                if rij_tekst:
+                    full_text += rij_tekst + '\n\n'
+                    paragraphs.append(rij_tekst)
+                    current_char_offset += len(rij_tekst) + 2
+
+        # Itereer body-elementen IN VOLGORDE (paragrafen én tabellen)
+        from docx.oxml.ns import qn
+        from docx.table import Table as DocxTable
+        from docx.text.paragraph import Paragraph as DocxParagraph
+
+        for kind in doc.element.body:
+            tag = kind.tag.split('}')[-1] if '}' in kind.tag else kind.tag
+            if tag == 'p':
+                _verwerk_para(DocxParagraph(kind, doc))
+            elif tag == 'tbl':
+                _verwerk_tabel(DocxTable(kind, doc))
+
+        # Voetnoten uitlezen via directe ZIP/XML-toegang
+        # (python-docx biedt geen footnotes_part attribuut)
+        try:
+            import zipfile
+            from lxml import etree as _etree
+            WNS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+            voetnoten = []
+            with zipfile.ZipFile(file_path, 'r') as zf:
+                for xml_naam in ('word/footnotes.xml', 'word/endnotes.xml'):
+                    if xml_naam not in zf.namelist():
+                        continue
+                    root = _etree.fromstring(zf.read(xml_naam))
+                    label = 'Voetnoot' if 'footnote' in xml_naam else 'Eindnoot'
+                    teller = 1
+                    for node in root.findall(f'{{{WNS}}}footnote') + root.findall(f'{{{WNS}}}endnote'):
+                        # Sla separator/continuation-noten over op basis van type, niet id
+                        fn_type = node.get(f'{{{WNS}}}type', 'normal')
+                        if fn_type != 'normal':
+                            continue
+                        tekst_delen = [t.text for t in node.findall(f'.//{{{WNS}}}t') if t.text]
+                        fn_tekst = ''.join(tekst_delen).strip()
+                        if fn_tekst:
+                            voetnoten.append(f'[{label} {teller}] {fn_tekst}')
+                            teller += 1
+            if voetnoten:
+                blok = '[VOETNOTEN/EINDNOTEN]\n' + '\n'.join(voetnoten) + '\n[/VOETNOTEN/EINDNOTEN]'
+                full_text += '\n\n' + blok + '\n\n'
+                paragraphs.append(blok)
+                current_char_offset += len(blok) + 4
+        except Exception:
+            pass  # Geen voetnoten of niet toegankelijk — geen probleem
 
     else:
         print(f"Fout: Ongeldig bestandstype '{file_path}'. Alleen .txt en .docx worden ondersteund.")

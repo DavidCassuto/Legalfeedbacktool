@@ -66,10 +66,17 @@
         </div>
 
         {% if sections %}
+            <div class="mb-3 flex gap-2 text-sm text-gray-500">
+                Sorteren op:
+                <button onclick="sortSections(0,'num')"  class="px-2 py-1 rounded border hover:bg-gray-100"># ID</button>
+                <button onclick="sortSections(1,'num')"  class="px-2 py-1 rounded border hover:bg-gray-100">Volgorde</button>
+                <button onclick="sortSections(2,'str')"  class="px-2 py-1 rounded border hover:bg-gray-100">Naam A-Z</button>
+            </div>
             <div class="overflow-x-auto">
-                <table class="min-w-full bg-white border border-gray-200 rounded-lg shadow-sm table-striped">
+                <table id="sectionsTable" class="min-w-full bg-white border border-gray-200 rounded-lg shadow-sm table-striped">
                     <thead class="bg-gray-100">
                         <tr>
+                            <th class="py-3 px-4 border-b text-left text-sm font-semibold text-gray-600 w-12">#</th>
                             <th class="py-3 px-4 border-b text-left text-sm font-semibold text-gray-600">Volgorde</th>
                             <th class="py-3 px-4 border-b text-left text-sm font-semibold text-gray-600">Naam</th>
                             <th class="py-3 px-4 border-b text-left text-sm font-semibold text-gray-600">Identifier</th>
@@ -81,6 +88,7 @@
                     <tbody>
                         {% for section in sections %}
                             <tr class="hover:bg-gray-50 transition duration-150 ease-in-out section-level-{{ section.level or 1 }}">
+                                <td class="py-3 px-4 border-b text-sm text-gray-400 font-mono">{{ section.id }}</td>
                                 <td class="py-3 px-4 border-b text-sm text-gray-700">
                                     {% if section.order_index %}
                                         <span class="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-mono">
@@ -194,5 +202,19 @@
             }
         }
     </script>
+<script>
+function sortSections(colIndex, type) {
+    const table = document.getElementById('sectionsTable');
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a, b) => {
+        const aVal = a.cells[colIndex]?.innerText.trim() || '';
+        const bVal = b.cells[colIndex]?.innerText.trim() || '';
+        if (type === 'num') return parseInt(aVal) - parseInt(bVal);
+        return aVal.localeCompare(bVal, 'nl');
+    });
+    rows.forEach(r => tbody.appendChild(r));
+}
+</script>
 </body>
 </html> 

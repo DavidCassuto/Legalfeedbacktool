@@ -53,6 +53,10 @@
         {% endwith %}
 
         <form action="{{ url_for('edit_criterion', id=criterion.id) }}" method="POST" class="space-y-6">
+            <div class="flex justify-end space-x-3 pb-4 border-b">
+                <a href="{{ url_for('list_criteria') }}" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg shadow transition duration-200">Annuleren</a>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-200">Criterium Opslaan</button>
+            </div>
             <div>
                 <label for="name" class="block text-sm font-medium text-gray-700">Naam:</label>
                 <input type="text" id="name" name="name" value="{{ criterion.name }}" required
@@ -111,6 +115,10 @@
                     <textarea id="llm_role_prompt" name="llm_role_prompt" rows="3"
                               placeholder="Je bent een kritische Nederlandse docent die juridische scripties beoordeelt."
                               class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-purple-500 focus:border-purple-500 text-sm">{{ llm_role_prompt }}</textarea>
+                    <p class="mt-1 text-xs text-purple-700 bg-white border border-purple-200 rounded px-2 py-1">
+                        Als leeg: de <strong>standaard rolprompt van het documenttype</strong> wordt automatisch gebruikt tijdens de analyse.
+                        Instelbaar via <a href="{{ url_for('list_document_types') }}" class="underline hover:text-purple-900">Document Types → Bewerken</a>.
+                    </p>
                 </div>
                 <div>
                     <label for="llm_criteria_prompt" class="block text-sm font-medium text-gray-700">
@@ -155,15 +163,6 @@
                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
                 <label for="is_enabled" class="ml-2 block text-sm text-gray-900">Ingeschakeld</label>
             </div>
-            <div class="flex items-center">
-                <input type="checkbox" id="show_suggestion" name="show_suggestion" value="1"
-                       {% if show_suggestion %}checked{% endif %}
-                       class="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded">
-                <label for="show_suggestion" class="ml-2 block text-sm text-gray-900">
-                    Toon suggestie in Word-commentaar
-                    <span class="text-xs text-gray-500">(uitvinken = alleen het probleem tonen, geen verbetervoorstel)</span>
-                </label>
-            </div>
             <div>
                 <label for="severity" class="block text-sm font-medium text-gray-700">Ernst:</label>
                 <select id="severity" name="severity" required
@@ -180,10 +179,19 @@
                 <input type="text" id="error_message" name="error_message" value="{{ criterion.error_message }}"
                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
             </div>
-            <div>
-                <label for="fixed_feedback_text" class="block text-sm font-medium text-gray-700">Voorgestelde Oplossing:</label>
+            <div class="p-3 border border-gray-200 rounded-lg bg-gray-50 space-y-3">
+                <label for="fixed_feedback_text" class="block text-sm font-medium text-gray-700">Voorgestelde Oplossing <span class="text-gray-400 font-normal">(verschijnt als suggestie in Word-commentaar)</span>:</label>
                 <textarea id="fixed_feedback_text" name="fixed_feedback_text" rows="2"
-                          class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">{{ criterion.fixed_feedback_text }}</textarea>
+                          class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">{{ criterion.fixed_feedback_text }}</textarea>
+                <div class="flex items-center">
+                    <input type="checkbox" id="show_suggestion" name="show_suggestion" value="1"
+                           {% if show_suggestion %}checked{% endif %}
+                           class="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded">
+                    <label for="show_suggestion" class="ml-2 block text-sm text-gray-900">
+                        Toon suggestie in Word-commentaar
+                        <span class="text-xs text-gray-500">(uitvinken = alleen het probleem tonen, geen verbetervoorstel)</span>
+                    </label>
+                </div>
             </div>
             <div>
                 <label for="frequency_unit" class="block text-sm font-medium text-gray-700">Frequentie Eenheid:</label>

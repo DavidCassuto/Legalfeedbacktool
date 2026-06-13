@@ -40,9 +40,6 @@
             gap: 8px;
             margin-bottom: 20px;
             box-shadow: 0 2px 8px rgba(77, 144, 142, 0.35);
-            position: sticky;
-            top: 0;
-            z-index: 1000;
         }
         .navbar-brand {
             color: white;
@@ -178,7 +175,7 @@
     </style>
 </head>
 <body>
-    <header>
+    <header style="position: sticky; top: 0; z-index: 1000;">
         <nav class="navbar">
             <a href="{{ url_for('index') }}" class="navbar-brand">📄 DocuCheck</a>
             <ul class="navbar-nav">
@@ -194,6 +191,7 @@
                         <li><a href="{{ url_for('list_document_types') }}">📋 Documenttypen</a></li>
                         <li><a href="{{ url_for('list_organizations') }}">🏫 Organisaties</a></li>
                         <li><a href="{{ url_for('list_users') }}">👤 Gebruikers</a></li>
+                        <li><a href="{{ url_for('onboarding_wizard') }}" style="background:rgba(246,189,96,0.25);">&#10024; Nieuwe klant</a></li>
                     {% endif %}
 
                     {# Gebruiker info + uitloggen #}

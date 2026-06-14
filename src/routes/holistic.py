@@ -11,6 +11,8 @@ Staat los van de bestaande document-pipeline; gebruikt geen secties/criteria/map
 """
 
 import os
+import re
+import json
 import uuid
 import traceback
 import logging
@@ -49,18 +51,17 @@ def holistic_form():
 
 @login_required
 def holistic_run():
-    """Voer de holistische analyse uit en toon het resultaat."""
+    """Stap 1: bestanden ontvangen, rubric voorbereiden en een KOSTENSCHATTING tonen
+    (nog geen API-call). De gebruiker bevestigt daarna in stap 2."""
     file = request.files.get('file')
     rubric_file = request.files.get('rubric_file')
     rubric_text = (request.form.get('rubric_text') or '').strip()
     product_type = (request.form.get('product_type') or AUTO_DETECT).strip()
     include_annexes = bool(request.form.get('include_annexes'))
 
-    def _back(extra=None):
+    def _back():
         form = {'rubric_text': rubric_text, 'product_type': product_type,
                 'include_annexes': include_annexes}
-        if extra:
-            form.update(extra)
         return render_template('holistic.html', product_types=PRODUCT_TYPES,
                                auto_detect=AUTO_DETECT, form=form)
 
@@ -88,7 +89,7 @@ def holistic_run():
         rubric_path = os.path.join(work_dir, f"{token}_rubric_{secure_filename(rubric_file.filename)}")
         rubric_file.save(rubric_path)
         try:
-            rubric_text, available = rubric_extraction.build_rubric_text(rubric_path, use_pt or None)
+            rubric_text, _available = rubric_extraction.build_rubric_text(rubric_path, use_pt or None)
         except Exception as e:
             logger.error("Rubric-extractie mislukt: %s", e)
             flash(f'Kon de rubric niet uit het Excel-bestand lezen: {e}', 'danger')
@@ -100,34 +101,82 @@ def holistic_run():
         flash('Upload het Excel-beoordelingsformulier of plak de rubric als tekst.', 'danger')
         return _back()
 
-    out_name = f"{token}_gecommentarieerd_{safe_name}"
-    out_path = os.path.join(work_dir, out_name)
+    out_path = os.path.join(work_dir, f"{token}_gecommentarieerd_{safe_name}")
+
+    # Kostenschatting (zonder API)
+    try:
+        estimate = holistic_analysis.estimate_run(
+            rubric_text=rubric_text, docx_path=in_path,
+            product_type=use_pt, detect_product_type=detect,
+            include_annexes=include_annexes,
+        )
+    except Exception as e:
+        logger.error("Kostenschatting mislukt: %s", e)
+        traceback.print_exc()
+        flash(f'Kon het document niet inlezen: {e}', 'danger')
+        return _back()
+
+    # Bewaar de voorbereide opdracht zodat stap 2 hem kan uitvoeren
+    job = {
+        'in_path': in_path, 'out_path': out_path, 'rubric_text': rubric_text,
+        'product_type': use_pt, 'detect': detect, 'include_annexes': include_annexes,
+        'safe_name': safe_name, 'model': estimate['model'],
+    }
+    with open(os.path.join(work_dir, f"{token}_job.json"), 'w', encoding='utf-8') as f:
+        json.dump(job, f)
+
+    return render_template(
+        'holistic.html', product_types=PRODUCT_TYPES, auto_detect=AUTO_DETECT,
+        form={'rubric_text': rubric_text, 'product_type': product_type,
+              'include_annexes': include_annexes},
+        estimate=estimate, job_token=token, original_name=safe_name,
+    )
+
+
+@login_required
+def holistic_analyze():
+    """Stap 2: de bevestigde opdracht echt uitvoeren (API-call) en resultaat tonen."""
+    token = (request.form.get('job_token') or '').strip()
+    if not re.fullmatch(r'[0-9a-f]{6,32}', token):
+        flash('Ongeldige opdracht. Probeer opnieuw te uploaden.', 'danger')
+        return render_template('holistic.html', product_types=PRODUCT_TYPES,
+                               auto_detect=AUTO_DETECT)
+
+    work_dir = _holistic_dir()
+    job_path = os.path.join(work_dir, f"{token}_job.json")
+    if not os.path.isfile(job_path):
+        flash('Opdracht verlopen of niet gevonden. Upload opnieuw.', 'danger')
+        return render_template('holistic.html', product_types=PRODUCT_TYPES,
+                               auto_detect=AUTO_DETECT)
+    with open(job_path, encoding='utf-8') as f:
+        job = json.load(f)
 
     try:
         result = holistic_analysis.run_holistic_analysis(
-            docx_path=in_path,
-            rubric_text=rubric_text,
-            product_type=use_pt or 'Onbekend',
-            output_path=out_path,
-            detect_product_type=detect,
-            include_annexes=include_annexes,
+            docx_path=job['in_path'],
+            rubric_text=job['rubric_text'],
+            product_type=job['product_type'] or 'Onbekend',
+            output_path=job['out_path'],
+            detect_product_type=job['detect'],
+            include_annexes=job['include_annexes'],
+            model=job.get('model') or holistic_analysis.DEFAULT_MODEL,
         )
     except Exception as e:
         logger.error("Holistische analyse mislukt: %s", e)
         traceback.print_exc()
         flash(f'Analyse mislukt: {e}', 'danger')
-        return _back()
+        return render_template('holistic.html', product_types=PRODUCT_TYPES,
+                               auto_detect=AUTO_DETECT)
+    finally:
+        try:
+            os.remove(job_path)
+        except OSError:
+            pass
 
-    download_name = os.path.basename(result['output_path'])
     return render_template(
-        'holistic.html',
-        product_types=PRODUCT_TYPES,
-        auto_detect=AUTO_DETECT,
-        form={'rubric_text': rubric_text, 'product_type': product_type,
-              'include_annexes': include_annexes},
-        result=result,
-        download_name=download_name,
-        original_name=safe_name,
+        'holistic.html', product_types=PRODUCT_TYPES, auto_detect=AUTO_DETECT,
+        result=result, download_name=os.path.basename(result['output_path']),
+        original_name=job.get('safe_name', 'document.docx'),
     )
 
 

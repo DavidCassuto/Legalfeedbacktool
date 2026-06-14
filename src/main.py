@@ -143,7 +143,7 @@ from routes.onboarding import (
     onboarding_step3, onboarding_step4, invite_accept, welcome,
 )
 from routes.misc import performance_stats
-from routes.holistic import holistic_form, holistic_run, holistic_download
+from routes.holistic import holistic_form, holistic_run, holistic_analyze, holistic_download
 
 # ── URL-registraties (endpoint-naam = functienaam → url_for() werkt ongewijzigd) ─
 R = app.add_url_rule   # alias voor leesbaarheid
@@ -225,6 +225,7 @@ R('/performance', 'performance_stats', performance_stats)
 # Holistische analyse (PROTOTYPE — LLM-first, geen secties/criteria nodig)
 R('/holistic',                   'holistic_form',     holistic_form)
 R('/holistic/run',               'holistic_run',      holistic_run,      methods=['POST'])
+R('/holistic/analyze',           'holistic_analyze',  holistic_analyze,  methods=['POST'])
 R('/holistic/download/<naam>',   'holistic_download', holistic_download)
 
 # ── Start ─────────────────────────────────────────────────────────────────────

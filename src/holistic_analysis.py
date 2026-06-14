@@ -57,8 +57,15 @@ def _build_system_prompt(product_type: str) -> str:
 
 
 def _build_user_prompt(rubric_text: str, document_text: str,
-                       detect_product_type: bool = False) -> str:
-    """Bouwt de instructie + JSON-schema. Document komt als laatste (groot blok)."""
+                       detect_product_type: bool = False) -> tuple[str, str]:
+    """
+    Bouwt de prompt in TWEE delen:
+      - cacheable_prefix : instructies + JSON-schema + de RUBRIC. Dit deel is
+        identiek voor elke student met dezelfde rubric, dus het wordt door
+        Anthropic prompt-caching hergebruikt (goedkoper bij meerdere runs).
+      - document_block   : het studentdocument zelf (verschilt per student).
+    De volgorde is bewust: het stabiele deel staat vooraan, het variabele achteraan.
+    """
     if detect_product_type:
         detect_instr = (
             "Hieronder staan MEERDERE rubrieken (één per beroepsproduct: PvA, Analyse, "
@@ -72,7 +79,7 @@ def _build_user_prompt(rubric_text: str, document_text: str,
         detect_instr = ""
         pt_field = ""
 
-    return f"""{detect_instr}Hieronder staan eerst de BEOORDELINGSRUBRIC en daarna het volledige STUDENTDOCUMENT.
+    cacheable_prefix = f"""{detect_instr}Hieronder staan eerst de BEOORDELINGSRUBRIC en daarna het volledige STUDENTDOCUMENT.
 
 Beoordeel het document onderdeel voor onderdeel volgens de rubric. Bepaal per
 rubric-onderdeel een oordeel en, waar relevant, concrete bevindingen die je aan een
@@ -115,12 +122,29 @@ severity-richtlijn: "violation" = duidelijke tekortkoming/fout; "warning" = aand
 {rubric_text}
 
 === STUDENTDOCUMENT ===
-{document_text}
 """
+    return cacheable_prefix, document_text
 
 
-def _call_llm(system_prompt: str, user_prompt: str, model: str, max_tokens: int = 8000) -> dict:
-    """Eén Anthropic-call. Retourneert {'text', 'input_tokens', 'output_tokens'}."""
+# Prijzen in USD per 1.000.000 tokens (input, output) — bron: claude-api skill, mei 2026.
+PRICING = {
+    'claude-sonnet-4-6': (3.0, 15.0),
+    'claude-haiku-4-5':  (1.0, 5.0),
+    'claude-opus-4-8':   (5.0, 25.0),
+}
+# Ruwe schatting: ~3.7 tekens per token voor Nederlands proza.
+CHARS_PER_TOKEN = 3.7
+# Typische omvang van het JSON-antwoord (rubric-oordeel + bevindingen).
+EST_OUTPUT_TOKENS = 4000
+
+
+def _call_llm(system_prompt: str, cacheable_prefix: str, document_block: str,
+              model: str, max_tokens: int = 8000) -> dict:
+    """
+    Eén Anthropic-call met prompt-caching op het systeemprompt + rubric-deel.
+    Bij meerdere runs met dezelfde rubric (bv. een klas studenten) worden die
+    tokens uit de cache gelezen (~10% van de inputprijs) i.p.v. opnieuw betaald.
+    """
     import anthropic
     if not Config.ANTHROPIC_API_KEY:
         raise RuntimeError("ANTHROPIC_API_KEY niet ingesteld (.env).")
@@ -128,13 +152,62 @@ def _call_llm(system_prompt: str, user_prompt: str, model: str, max_tokens: int 
     resp = client.messages.create(
         model=model,
         max_tokens=max_tokens,
-        system=system_prompt,
-        messages=[{'role': 'user', 'content': user_prompt}],
+        system=[{'type': 'text', 'text': system_prompt,
+                 'cache_control': {'type': 'ephemeral'}}],
+        messages=[{
+            'role': 'user',
+            'content': [
+                # Stabiel deel (instructies + rubric) -> gecached
+                {'type': 'text', 'text': cacheable_prefix,
+                 'cache_control': {'type': 'ephemeral'}},
+                # Variabel deel (het document) -> niet gecached
+                {'type': 'text', 'text': document_block},
+            ],
+        }],
     )
+    u = resp.usage
     return {
         'text':          resp.content[0].text,
-        'input_tokens':  resp.usage.input_tokens,
-        'output_tokens': resp.usage.output_tokens,
+        'input_tokens':  u.input_tokens,
+        'output_tokens': u.output_tokens,
+        'cache_read':    getattr(u, 'cache_read_input_tokens', 0) or 0,
+        'cache_created': getattr(u, 'cache_creation_input_tokens', 0) or 0,
+    }
+
+
+def estimate_run(rubric_text: str, docx_path: str, product_type: str = '',
+                 model: str = None, detect_product_type: bool = False,
+                 include_annexes: bool = False) -> dict:
+    """
+    Schat tokengebruik en kosten VOORAF in, zonder de API aan te roepen
+    (heuristisch op basis van tekenaantal). Wordt getoond vóór bevestiging.
+    """
+    model = model or DEFAULT_MODEL
+    full_text, _paras, headings = document_parsing.parse_document(docx_path)
+    if include_annexes:
+        analyze_text = full_text
+        annex_info = {'stripped': False, 'annex_heading': None,
+                      'chars_total': len(full_text), 'chars_analyzed': len(full_text)}
+    else:
+        analyze_text, annex_info = _strip_annexes(full_text, headings, docx_path)
+
+    system_prompt = _build_system_prompt(
+        'automatisch te bepalen' if detect_product_type else (product_type or 'Onbekend'))
+    prefix, doc_block = _build_user_prompt(rubric_text, analyze_text, detect_product_type)
+
+    input_chars = len(system_prompt) + len(prefix) + len(doc_block)
+    input_tokens = int(input_chars / CHARS_PER_TOKEN)
+    out_tokens = EST_OUTPUT_TOKENS
+    p_in, p_out = PRICING.get(model, PRICING[DEFAULT_MODEL])
+    cost_usd = input_tokens / 1_000_000 * p_in + out_tokens / 1_000_000 * p_out
+
+    return {
+        'model':            model,
+        'input_tokens':     input_tokens,
+        'est_output_tokens': out_tokens,
+        'cost_usd':         round(cost_usd, 3),
+        'annex_info':       annex_info,
+        'rubric_chars':     len(rubric_text),
     }
 
 
@@ -322,11 +395,13 @@ def run_holistic_analysis(
                         annex_info['annex_heading'],
                         annex_info['chars_total'], annex_info['chars_analyzed'])
 
-    # 2. LLM-call
+    # 2. LLM-call (met prompt-caching op systeemprompt + rubric)
     system_prompt = _build_system_prompt('automatisch te bepalen' if detect_product_type else product_type)
-    user_prompt = _build_user_prompt(rubric_text, analyze_text, detect_product_type)
-    llm = _call_llm(system_prompt, user_prompt, model)
-    logger.info("LLM klaar | in=%d out=%d tokens", llm['input_tokens'], llm['output_tokens'])
+    cacheable_prefix, document_block = _build_user_prompt(rubric_text, analyze_text, detect_product_type)
+    llm = _call_llm(system_prompt, cacheable_prefix, document_block, model)
+    logger.info("LLM klaar | in=%d out=%d cache_read=%d cache_created=%d",
+                llm['input_tokens'], llm['output_tokens'],
+                llm.get('cache_read', 0), llm.get('cache_created', 0))
 
     data = _parse_json(llm['text'])
     rubric_items = data.get('rubric_items', []) or []
@@ -401,6 +476,8 @@ def run_holistic_analysis(
         'unplaced':       unplaced,
         'output_path':    output_path,
         'usage':          {'input_tokens': llm['input_tokens'],
-                           'output_tokens': llm['output_tokens']},
+                           'output_tokens': llm['output_tokens'],
+                           'cache_read': llm.get('cache_read', 0),
+                           'cache_created': llm.get('cache_created', 0)},
         'model':          model,
     }

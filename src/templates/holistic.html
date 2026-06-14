@@ -80,9 +80,33 @@
                 placeholder="Alleen invullen als je géén Excel-bestand uploadt...">{{ form.rubric_text if form else '' }}</textarea>
     </details>
 
-    <button class="holo-btn" type="submit">Analyseren &amp; comments plaatsen</button>
+    <button class="holo-btn" type="submit">Kosten schatten →</button>
   </form>
 </div>
+
+{% if estimate %}
+<div class="holo-card" style="border:2px solid #4D908E;">
+  <h2>2. Kostenschatting (vóór analyse)</h2>
+  <table class="holo">
+    <tbody>
+      <tr><td>Model</td><td><strong>{{ estimate.model }}</strong></td></tr>
+      <tr><td>Geschat aantal input-tokens</td><td>± {{ '{:,}'.format(estimate.input_tokens).replace(',', '.') }}</td></tr>
+      <tr><td>Geschat aantal output-tokens</td><td>± {{ '{:,}'.format(estimate.est_output_tokens).replace(',', '.') }}</td></tr>
+      <tr><td>Geschatte kosten (1e run)</td><td><strong>± ${{ '%.2f'|format(estimate.cost_usd) }}</strong> (USD)</td></tr>
+      {% if estimate.annex_info and estimate.annex_info.stripped %}
+        <tr><td>Bijlagen</td><td>overgeslagen vanaf “{{ estimate.annex_info.annex_heading }}” ({{ estimate.annex_info.chars_analyzed }}/{{ estimate.annex_info.chars_total }} tekens)</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+  <div class="holo-hint">Schatting op basis van tekstomvang (≈3,7 tekens/token); de werkelijke
+    kosten kunnen iets afwijken. Bij meerdere studenten met dezelfde rubric wordt het
+    rubric-deel gecachet, dus volgende runs zijn goedkoper.</div>
+  <form method="POST" action="{{ url_for('holistic_analyze') }}" style="margin-top:14px;">
+    <input type="hidden" name="job_token" value="{{ job_token }}">
+    <button class="holo-btn" type="submit">✓ Bevestig en analyseer ({{ original_name }})</button>
+  </form>
+</div>
+{% endif %}
 
 {% if result %}
 <div class="holo-card">
@@ -90,7 +114,8 @@
   <p>
     {% if result.product_type %}Beroepsproduct: <strong>{{ result.product_type }}</strong> &middot;{% endif %}
     Model: <strong>{{ result.model }}</strong> &middot;
-    tokens: {{ result.usage.input_tokens }} in / {{ result.usage.output_tokens }} uit &middot;
+    tokens: {{ result.usage.input_tokens }} in / {{ result.usage.output_tokens }} uit
+    {%- if result.usage.cache_read %} &middot; {{ result.usage.cache_read }} uit cache ♻️{% endif %} &middot;
     bevindingen geplaatst: <strong>{{ result.placed_count }}</strong>
     {% if result.unplaced %} &middot; <span class="sev-warning">{{ result.unplaced|length }} niet te plaatsen</span>{% endif %}
   </p>

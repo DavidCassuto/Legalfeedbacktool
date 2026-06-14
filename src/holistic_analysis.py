@@ -155,6 +155,59 @@ def _parse_json(text: str) -> dict:
         raise
 
 
+# Kopteksten die het begin van de bijlagen/annexen markeren. De analyse stopt hier
+# standaard: bijlagen horen niet bij de inhoudelijke beoordeling en kosten veel tokens.
+_ANNEX_RE = re.compile(
+    r'^\s*(?:bijlage[n]?|annex(?:en|es)?|appendix|appendices)\b',
+    re.IGNORECASE,
+)
+
+
+def _find_annex_start(full_text: str, headings: list[dict]) -> tuple[int | None, str | None]:
+    """
+    Zoek de positie (char-offset) waar de bijlagen beginnen, op basis van een
+    koptekst als 'Bijlagen' / 'Bijlage 1' / 'Annex' / 'Appendix'.
+
+    Gebruikt ALLEEN echte Word-kopstijlen (headings) — inhoudsopgave-regels staan
+    daar niet tussen, dus een 'Bijlagen'-vermelding in de inhoudsopgave triggert
+    de afkap niet. Voetnoten/eindnoten staan na de body en blijven buiten beschouwing.
+    """
+    fn_marker = full_text.find('[VOETNOTEN/EINDNOTEN]')
+    body_end = fn_marker if fn_marker != -1 else len(full_text)
+
+    candidates = []
+    for h in headings:
+        sc = h.get('start_char', -1)
+        if sc < 0 or sc >= body_end:
+            continue
+        txt = (h.get('text') or '').strip()
+        # Verwijder eventuele voorloopnummering ("7 Bijlagen", "7. Bijlagen")
+        cleaned = re.sub(r'^\s*\d+(\.\d+)*\.?\s*', '', txt)
+        if _ANNEX_RE.match(cleaned) or _ANNEX_RE.match(txt):
+            candidates.append((sc, txt))
+    if not candidates:
+        return None, None
+    candidates.sort()
+    return candidates[0]
+
+
+def _strip_annexes(full_text: str, headings: list[dict]) -> tuple[str, dict]:
+    """
+    Knip de bijlagen weg, maar behoud het voetnoten/eindnoten-blok (bronvermelding).
+    Returns (te_analyseren_tekst, info-dict).
+    """
+    start, htxt = _find_annex_start(full_text, headings)
+    if start is None:
+        return full_text, {'stripped': False, 'annex_heading': None,
+                           'chars_total': len(full_text), 'chars_analyzed': len(full_text)}
+    fn_marker = full_text.find('[VOETNOTEN/EINDNOTEN]')
+    body = full_text[:start].rstrip()
+    if fn_marker != -1 and fn_marker > start:
+        body = body + '\n\n' + full_text[fn_marker:]
+    return body, {'stripped': True, 'annex_heading': htxt,
+                  'chars_total': len(full_text), 'chars_analyzed': len(body)}
+
+
 def _normalize(s: str) -> str:
     return re.sub(r'\s+', ' ', (s or '').lower().strip())
 
@@ -186,6 +239,7 @@ def run_holistic_analysis(
     model: str = DEFAULT_MODEL,
     output_path: str | None = None,
     detect_product_type: bool = False,
+    include_annexes: bool = False,
 ) -> dict:
     """
     Voer de holistische analyse uit en plaats Word-comments via de bestaande engine.
@@ -204,13 +258,25 @@ def run_holistic_analysis(
                 os.path.basename(docx_path), product_type, model)
 
     # 1. Document parsen (hergebruik bestaande parser)
-    full_text, paragraphs, _headings = document_parsing.parse_document(docx_path)
+    full_text, paragraphs, headings = document_parsing.parse_document(docx_path)
     if not full_text.strip():
         raise RuntimeError("Kon geen tekst uit het document halen (leeg of onleesbaar).")
 
+    # 1b. Bijlagen standaard wegknippen (scheelt veel tokens en is geen beoordelingsstof)
+    if include_annexes:
+        analyze_text = full_text
+        annex_info = {'stripped': False, 'annex_heading': None,
+                      'chars_total': len(full_text), 'chars_analyzed': len(full_text)}
+    else:
+        analyze_text, annex_info = _strip_annexes(full_text, headings)
+        if annex_info['stripped']:
+            logger.info("Bijlagen overgeslagen vanaf koptekst %r (%d -> %d tekens)",
+                        annex_info['annex_heading'],
+                        annex_info['chars_total'], annex_info['chars_analyzed'])
+
     # 2. LLM-call
     system_prompt = _build_system_prompt('automatisch te bepalen' if detect_product_type else product_type)
-    user_prompt = _build_user_prompt(rubric_text, full_text, detect_product_type)
+    user_prompt = _build_user_prompt(rubric_text, analyze_text, detect_product_type)
     llm = _call_llm(system_prompt, user_prompt, model)
     logger.info("LLM klaar | in=%d out=%d tokens", llm['input_tokens'], llm['output_tokens'])
 
@@ -281,6 +347,7 @@ def run_holistic_analysis(
         'rubric_items':   rubric_items,
         'eindbeeld':      eindbeeld,
         'product_type':   detected_product_type,
+        'annex_info':     annex_info,
         'feedback_items': feedback_items,
         'placed_count':   placed_count,
         'unplaced':       unplaced,

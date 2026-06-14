@@ -54,9 +54,11 @@ def holistic_run():
     rubric_file = request.files.get('rubric_file')
     rubric_text = (request.form.get('rubric_text') or '').strip()
     product_type = (request.form.get('product_type') or AUTO_DETECT).strip()
+    include_annexes = bool(request.form.get('include_annexes'))
 
     def _back(extra=None):
-        form = {'rubric_text': rubric_text, 'product_type': product_type}
+        form = {'rubric_text': rubric_text, 'product_type': product_type,
+                'include_annexes': include_annexes}
         if extra:
             form.update(extra)
         return render_template('holistic.html', product_types=PRODUCT_TYPES,
@@ -108,6 +110,7 @@ def holistic_run():
             product_type=use_pt or 'Onbekend',
             output_path=out_path,
             detect_product_type=detect,
+            include_annexes=include_annexes,
         )
     except Exception as e:
         logger.error("Holistische analyse mislukt: %s", e)
@@ -120,7 +123,8 @@ def holistic_run():
         'holistic.html',
         product_types=PRODUCT_TYPES,
         auto_detect=AUTO_DETECT,
-        form={'rubric_text': rubric_text, 'product_type': product_type},
+        form={'rubric_text': rubric_text, 'product_type': product_type,
+              'include_annexes': include_annexes},
         result=result,
         download_name=download_name,
         original_name=safe_name,

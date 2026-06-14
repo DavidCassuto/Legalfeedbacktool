@@ -191,12 +191,60 @@ def _find_annex_start(full_text: str, headings: list[dict]) -> tuple[int | None,
     return candidates[0]
 
 
-def _strip_annexes(full_text: str, headings: list[dict]) -> tuple[str, dict]:
+def _find_annex_start_bold(docx_path: str, full_text: str,
+                           headings: list[dict]) -> tuple[int | None, str | None]:
+    """
+    Fallback: vind een bijlage-start die GEEN Word-kopstijl heeft maar wel als
+    koptekst is bedoeld — vetgedrukt of in HOOFDLETTERS (komt veel voor bij studenten).
+
+    TOC-vermijding: er wordt pas gezocht NA de eerste echte koptekst in het document
+    (de inhoudsopgave staat daarvoor), en regels met tabs/punt-leiders worden genegeerd.
+    """
+    from docx import Document
+    try:
+        doc = Document(docx_path)
+    except Exception:
+        return None, None
+
+    # Zoek pas vanaf de eerste echte koptekst — daarvoor zit de inhoudsopgave.
+    search_from = min((h['start_char'] for h in headings
+                       if h.get('start_char', -1) >= 0), default=0)
+
+    for para in doc.paragraphs:
+        raw = (para.text or '').strip()
+        if not raw or '\t' in raw or re.search(r'\.{4,}|…', raw):
+            continue  # leeg of inhoudsopgave-achtig (punt-leiders / tab + paginanr.)
+        if len(raw.split()) > 6:
+            continue  # te lang voor een koptekst
+        cleaned = re.sub(r'^\s*\d+(\.\d+)*\.?\s*', '', raw)
+        if not (_ANNEX_RE.match(cleaned) or _ANNEX_RE.match(raw)):
+            continue
+        style = (para.style.name if para.style else '') or ''
+        emphasized = (
+            style.startswith('Heading')
+            or raw.isupper()
+            or any(r.bold for r in para.runs if (r.text or '').strip())
+        )
+        if not emphasized:
+            continue
+        pos = full_text.find(raw, search_from)
+        if pos == -1:
+            pos = full_text.find(cleaned, search_from)
+        if pos != -1:
+            return pos, raw
+    return None, None
+
+
+def _strip_annexes(full_text: str, headings: list[dict],
+                   docx_path: str | None = None) -> tuple[str, dict]:
     """
     Knip de bijlagen weg, maar behoud het voetnoten/eindnoten-blok (bronvermelding).
+    Probeert eerst echte kopstijlen, daarna vet/hoofdletter-koppen.
     Returns (te_analyseren_tekst, info-dict).
     """
     start, htxt = _find_annex_start(full_text, headings)
+    if start is None and docx_path:
+        start, htxt = _find_annex_start_bold(docx_path, full_text, headings)
     if start is None:
         return full_text, {'stripped': False, 'annex_heading': None,
                            'chars_total': len(full_text), 'chars_analyzed': len(full_text)}
@@ -268,7 +316,7 @@ def run_holistic_analysis(
         annex_info = {'stripped': False, 'annex_heading': None,
                       'chars_total': len(full_text), 'chars_analyzed': len(full_text)}
     else:
-        analyze_text, annex_info = _strip_annexes(full_text, headings)
+        analyze_text, annex_info = _strip_annexes(full_text, headings, docx_path)
         if annex_info['stripped']:
             logger.info("Bijlagen overgeslagen vanaf koptekst %r (%d -> %d tekens)",
                         annex_info['annex_heading'],

@@ -49,7 +49,23 @@
     <input type="file" id="file" name="file" accept=".docx" required>
     <div class="holo-hint">Alleen .docx — Word-comments kunnen niet in een gescande PDF.</div>
 
-    <label for="rubric_file">Beoordelingsformulier (.xlsx)</label>
+    {% if saved_rubrics %}
+    <label for="saved_rubric_id">Opgeslagen rubric kiezen</label>
+    <select id="saved_rubric_id" name="saved_rubric_id">
+      <option value="">— geen / nieuw bestand uploaden —</option>
+      {% for r in saved_rubrics %}
+        <option value="{{ r.id }}" {% if form and form.saved_rubric_id == r.id %}selected{% endif %}>{{ r.name }}</option>
+      {% endfor %}
+    </select>
+    <div class="holo-hint">Kies een eerder opgeslagen rubric — dan hoef je geen Excel te uploaden.
+      <a href="{{ url_for('holistic_rubrics') }}">Bibliotheek beheren →</a></div>
+    {% else %}
+    <div class="holo-hint" style="margin-top:14px;">
+      💡 Tip: sla een rubric op in de <a href="{{ url_for('holistic_rubrics') }}">rubric-bibliotheek</a>
+      om hem te hergebruiken zonder opnieuw te uploaden.</div>
+    {% endif %}
+
+    <label for="rubric_file">Of: beoordelingsformulier uploaden (.xlsx)</label>
     <input type="file" id="rubric_file" name="rubric_file" accept=".xlsx,.xlsm">
     <div class="holo-hint">Upload het Excel-beoordelingsformulier — niets plakken nodig.
       De rubriek-tekst wordt automatisch uit het juiste tabblad gehaald.</div>

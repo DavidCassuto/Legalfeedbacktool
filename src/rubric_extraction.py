@@ -112,9 +112,9 @@ def list_product_tabs(xlsx_path: str) -> list[str]:
     return list(extract_rubric_tabs(xlsx_path).keys())
 
 
-def build_rubric_text(xlsx_path: str, product_type: str | None = None) -> tuple[str, list[str]]:
+def combine_tabs(tabs: dict[str, str], product_type: str | None = None) -> tuple[str, list[str]]:
     """
-    Bouw de rubric-tekst voor de LLM.
+    Combineer reeds-geëxtraheerde tabs tot rubric-tekst voor de LLM.
 
     - product_type opgegeven en gevonden -> alleen die tab.
     - anders (auto-detect) -> alle tabs, gelabeld, zodat de LLM zelf het juiste
@@ -122,7 +122,6 @@ def build_rubric_text(xlsx_path: str, product_type: str | None = None) -> tuple[
 
     Returns (rubric_text, beschikbare_tab_namen).
     """
-    tabs = extract_rubric_tabs(xlsx_path)
     available = list(tabs.keys())
     if not tabs:
         return '', available
@@ -133,7 +132,11 @@ def build_rubric_text(xlsx_path: str, product_type: str | None = None) -> tuple[
             if pt and pt in naam.strip().lower():
                 return f"=== Rubric voor beroepsproduct: {naam} ===\n{text}", available
 
-    # Auto: alle tabs gelabeld
     blocks = [f"=== Rubric voor beroepsproduct: {naam} ===\n{text}"
               for naam, text in tabs.items()]
     return '\n\n'.join(blocks), available
+
+
+def build_rubric_text(xlsx_path: str, product_type: str | None = None) -> tuple[str, list[str]]:
+    """Extraheer tabs uit een Excel-bestand en combineer ze tot rubric-tekst."""
+    return combine_tabs(extract_rubric_tabs(xlsx_path), product_type)

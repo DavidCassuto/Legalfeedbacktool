@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Rubric-bibliotheek (prototype) - DocuCheck{% endblock %}
+
+{% block content %}
+<style>
+  .holo-card { background:#fff; border-radius:14px; padding:24px; margin-bottom:24px;
+               box-shadow:0 4px 15px rgba(77,144,142,0.12); }
+  .holo-card h2 { color:#4D908E; margin-bottom:14px; }
+  .holo-form label { display:block; font-weight:600; margin:14px 0 6px; color:#2B2D42; }
+  .holo-form input[type=file], .holo-form input[type=text] {
+      width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-size:0.95em; }
+  .holo-btn { margin-top:16px; background:linear-gradient(135deg,#4D908E,#52796F); color:#fff;
+              border:none; padding:11px 20px; border-radius:8px; font-size:1em; cursor:pointer; font-weight:600; }
+  .holo-hint { color:#6C757D; font-size:0.86em; margin-top:4px; }
+  table.holo { width:100%; border-collapse:collapse; margin-top:10px; }
+  table.holo th, table.holo td { text-align:left; padding:9px 10px; border-bottom:1px solid #E9ECEF;
+                                 vertical-align:top; font-size:0.93em; }
+  table.holo th { color:#52796F; }
+  .del-btn { background:#E63946; color:#fff; border:none; padding:6px 12px; border-radius:6px;
+             cursor:pointer; font-size:0.85em; }
+  .tag { display:inline-block; background:#E9ECEF; border-radius:6px; padding:1px 7px;
+         margin:1px; font-size:0.8em; color:#495057; }
+</style>
+
+<div class="header" style="margin-bottom:20px;">
+  <h1>Rubric-bibliotheek <span style="font-size:0.5em; background:#F9C74F; color:#2B2D42; padding:2px 8px; border-radius:8px;">PROTOTYPE</span></h1>
+  <p>Sla het Excel-beoordelingsformulier één keer op. Bij een analyse kies je de rubric
+     uit de lijst — geen herhaald uploaden meer.</p>
+  <p style="margin-top:8px;"><a href="{{ url_for('holistic_form') }}" style="color:#fff; text-decoration:underline;">← Terug naar analyse</a></p>
+</div>
+
+<div class="holo-card">
+  <h2>Nieuwe rubric opslaan</h2>
+  <form class="holo-form" method="POST" action="{{ url_for('holistic_rubric_add') }}" enctype="multipart/form-data">
+    <label for="name">Naam (bv. “HBO-Rechten Afstuderen 2025-2026”)</label>
+    <input type="text" id="name" name="name" placeholder="Laat leeg om de bestandsnaam te gebruiken">
+    <label for="rubric_file">Beoordelingsformulier (.xlsx)</label>
+    <input type="file" id="rubric_file" name="rubric_file" accept=".xlsx,.xlsm" required>
+    <div class="holo-hint">De rubric-tekst wordt uit alle tabbladen (beroepsproducten) gehaald en bewaard.</div>
+    <button class="holo-btn" type="submit">Opslaan</button>
+  </form>
+</div>
+
+<div class="holo-card">
+  <h2>Opgeslagen rubrics ({{ saved_rubrics|length }})</h2>
+  {% if saved_rubrics %}
+    <table class="holo">
+      <thead><tr><th>Naam</th><th>Beroepsproducten</th><th>Opgeslagen</th><th></th></tr></thead>
+      <tbody>
+        {% for r in saved_rubrics %}
+          <tr>
+            <td><strong>{{ r.name }}</strong></td>
+            <td>{% for t in r.tab_names %}<span class="tag">{{ t }}</span>{% endfor %}</td>
+            <td>{{ r.created_at[:10] }}</td>
+            <td>
+              <form method="POST" action="{{ url_for('holistic_rubric_delete', rubric_id=r.id) }}"
+                    onsubmit="return confirm('Deze rubric verwijderen?');">
+                <button class="del-btn" type="submit">Verwijderen</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="holo-hint">Nog geen rubrics opgeslagen. Voeg er hierboven één toe.</p>
+  {% endif %}
+</div>
+{% endblock %}

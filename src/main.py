@@ -143,7 +143,10 @@ from routes.onboarding import (
     onboarding_step3, onboarding_step4, invite_accept, welcome,
 )
 from routes.misc import performance_stats
-from routes.holistic import holistic_form, holistic_run, holistic_analyze, holistic_download
+from routes.holistic import (
+    holistic_form, holistic_run, holistic_analyze, holistic_download,
+    holistic_rubrics, holistic_rubric_add, holistic_rubric_delete,
+)
 
 # ── URL-registraties (endpoint-naam = functienaam → url_for() werkt ongewijzigd) ─
 R = app.add_url_rule   # alias voor leesbaarheid
@@ -227,6 +230,9 @@ R('/holistic',                   'holistic_form',     holistic_form)
 R('/holistic/run',               'holistic_run',      holistic_run,      methods=['POST'])
 R('/holistic/analyze',           'holistic_analyze',  holistic_analyze,  methods=['POST'])
 R('/holistic/download/<naam>',   'holistic_download', holistic_download)
+R('/holistic/rubrics',                  'holistic_rubrics',       holistic_rubrics)
+R('/holistic/rubrics/add',              'holistic_rubric_add',    holistic_rubric_add,    methods=['POST'])
+R('/holistic/rubrics/<rubric_id>/delete', 'holistic_rubric_delete', holistic_rubric_delete, methods=['POST'])
 
 # ── Start ─────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':

@@ -19,12 +19,14 @@ import logging
 
 from flask import (
     render_template, request, send_file, current_app, flash, abort,
+    redirect, url_for,
 )
 from werkzeug.utils import secure_filename
 
 from auth import login_required
 import holistic_analysis
 import rubric_extraction
+import rubric_library
 
 logger = logging.getLogger('docucheck.holistic')
 
@@ -42,11 +44,15 @@ def _holistic_dir() -> str:
     return d
 
 
+def _saved_rubrics():
+    return rubric_library.list_rubrics(current_app.config['UPLOAD_FOLDER'])
+
+
 @login_required
 def holistic_form():
     """Toon het uploadformulier."""
     return render_template('holistic.html', product_types=PRODUCT_TYPES,
-                           auto_detect=AUTO_DETECT)
+                           auto_detect=AUTO_DETECT, saved_rubrics=_saved_rubrics())
 
 
 @login_required
@@ -56,14 +62,16 @@ def holistic_run():
     file = request.files.get('file')
     rubric_file = request.files.get('rubric_file')
     rubric_text = (request.form.get('rubric_text') or '').strip()
+    saved_rubric_id = (request.form.get('saved_rubric_id') or '').strip()
     product_type = (request.form.get('product_type') or AUTO_DETECT).strip()
     include_annexes = bool(request.form.get('include_annexes'))
 
     def _back():
         form = {'rubric_text': rubric_text, 'product_type': product_type,
-                'include_annexes': include_annexes}
+                'include_annexes': include_annexes, 'saved_rubric_id': saved_rubric_id}
         return render_template('holistic.html', product_types=PRODUCT_TYPES,
-                               auto_detect=AUTO_DETECT, form=form)
+                               auto_detect=AUTO_DETECT, form=form,
+                               saved_rubrics=_saved_rubrics())
 
     # Validatie: studentdocument
     if not file or not file.filename:
@@ -79,10 +87,17 @@ def holistic_run():
     in_path = os.path.join(work_dir, f"{token}_{safe_name}")
     file.save(in_path)
 
-    # Rubric-bron: bij voorkeur het geüploade Excel-formulier, anders geplakte tekst
+    # Rubric-bron, in volgorde van voorkeur:
+    #   1) opgeslagen rubric uit de bibliotheek  2) geüpload Excel  3) geplakte tekst
     detect = (product_type == AUTO_DETECT)
     use_pt = '' if detect else product_type
-    if rubric_file and rubric_file.filename:
+    if saved_rubric_id:
+        rubric_text, _available = rubric_library.build_text_from_saved(
+            current_app.config['UPLOAD_FOLDER'], saved_rubric_id, use_pt or None)
+        if not rubric_text:
+            flash('De gekozen opgeslagen rubric kon niet geladen worden.', 'danger')
+            return _back()
+    elif rubric_file and rubric_file.filename:
         if not rubric_file.filename.lower().endswith(('.xlsx', '.xlsm')):
             flash('Het beoordelingsformulier moet een Excel-bestand zijn (.xlsx).', 'danger')
             return _back()
@@ -127,8 +142,9 @@ def holistic_run():
 
     return render_template(
         'holistic.html', product_types=PRODUCT_TYPES, auto_detect=AUTO_DETECT,
+        saved_rubrics=_saved_rubrics(),
         form={'rubric_text': rubric_text, 'product_type': product_type,
-              'include_annexes': include_annexes},
+              'include_annexes': include_annexes, 'saved_rubric_id': saved_rubric_id},
         estimate=estimate, job_token=token, original_name=safe_name,
     )
 
@@ -188,3 +204,52 @@ def holistic_download(naam):
     if not os.path.isfile(path):
         abort(404)
     return send_file(path, as_attachment=True, download_name=safe)
+
+
+# ── Rubric-bibliotheek (opgeslagen rubrics) ──────────────────────────────────
+
+@login_required
+def holistic_rubrics():
+    """Beheerpagina: opgeslagen rubrics tonen + nieuwe toevoegen."""
+    return render_template('holistic_rubrics.html', saved_rubrics=_saved_rubrics())
+
+
+@login_required
+def holistic_rubric_add():
+    """Upload een Excel-formulier en bewaar het als herbruikbare rubric."""
+    name = (request.form.get('name') or '').strip()
+    rubric_file = request.files.get('rubric_file')
+    if not rubric_file or not rubric_file.filename:
+        flash('Selecteer een Excel-bestand (.xlsx).', 'danger')
+        return redirect(url_for('holistic_rubrics'))
+    if not rubric_file.filename.lower().endswith(('.xlsx', '.xlsm')):
+        flash('Het beoordelingsformulier moet een Excel-bestand zijn (.xlsx).', 'danger')
+        return redirect(url_for('holistic_rubrics'))
+
+    work_dir = _holistic_dir()
+    tmp = os.path.join(work_dir, f"tmp_{uuid.uuid4().hex[:8]}_{secure_filename(rubric_file.filename)}")
+    rubric_file.save(tmp)
+    try:
+        if not name:
+            name = os.path.splitext(rubric_file.filename)[0]
+        rec = rubric_library.save_rubric(current_app.config['UPLOAD_FOLDER'], name, tmp)
+        flash(f"Rubric '{rec['name']}' opgeslagen ({len(rec['tabs'])} beroepsproducten).", 'success')
+    except Exception as e:
+        logger.error("Rubric opslaan mislukt: %s", e)
+        flash(f'Kon de rubric niet opslaan: {e}', 'danger')
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+    return redirect(url_for('holistic_rubrics'))
+
+
+@login_required
+def holistic_rubric_delete(rubric_id):
+    """Verwijder een opgeslagen rubric."""
+    if rubric_library.delete_rubric(current_app.config['UPLOAD_FOLDER'], rubric_id):
+        flash('Rubric verwijderd.', 'success')
+    else:
+        flash('Rubric niet gevonden.', 'danger')
+    return redirect(url_for('holistic_rubrics'))

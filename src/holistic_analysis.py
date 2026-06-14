@@ -28,8 +28,19 @@ logger = logging.getLogger('docucheck.holistic')
 # tussen oordeelskwaliteit en kosten op een document van deze omvang.
 DEFAULT_MODEL = 'claude-sonnet-4-6'
 
-# Kleur per severity (UI + Word-comment-context)
-_SEVERITY_COLOR = {
+# Formatieve severity-labels (van het LLM) -> interne status voor de comment-engine.
+# De engine filtert op status in ('violation','warning','info','error'); we mappen
+# de feedback-vriendelijke labels daarop, maar tonen het Nederlandse label in de UI.
+_SEVERITY_MAP = {
+    'belangrijk':    'violation',
+    'aandachtspunt': 'warning',
+    'tip':           'info',
+    # tolerant voor oude/Engelse waarden:
+    'violation':     'violation',
+    'warning':       'warning',
+    'info':          'info',
+}
+_STATUS_COLOR = {
     'violation': '#E63946',   # rood
     'warning':   '#F9C74F',   # geel
     'info':      '#4D908E',   # teal
@@ -41,19 +52,29 @@ _NL_TAALGEBRUIK = (
 )
 
 
-def _build_system_prompt(product_type: str) -> str:
+def _build_system_prompt(product_type: str, feedback_profile: str = '') -> str:
     d = date.today()
     maanden = ['januari', 'februari', 'maart', 'april', 'mei', 'juni',
                'juli', 'augustus', 'september', 'oktober', 'november', 'december']
     vandaag = f"{d.day} {maanden[d.month - 1]} {d.year}"
-    return (
-        "Je bent een ervaren, kritische maar eerlijke Nederlandse afstudeerbegeleider "
-        "die een studentdocument beoordeelt aan de hand van een door de opleiding "
-        f"aangeleverde beoordelingsrubric (producttype: {product_type}).\n\n"
+    base = (
+        "Je bent een ervaren Nederlandse afstudeerbegeleider die FORMATIEVE feedback geeft "
+        f"op studentwerk (producttype: {product_type}). "
+        "Je doel is de student helpen het werk te verbeteren — NIET beoordelen of becijferen. "
+        "Geef GEEN cijfer, score, eindoordeel of 'voldoende/onvoldoende'. "
+        "Geef concrete, constructieve, opbouwende feedback: benoem wat sterk is en, vooral, "
+        "wat de student concreet kan verbeteren en hoe. De rubriek is de structuur en de norm; "
+        "jouw taak is de student daar met feedback naartoe te helpen.\n\n"
         f"VANDAAG IS HET: {vandaag}. Beoordeel data en jaartallen ten opzichte van deze datum; "
         "een jaartal in 2025 of 2026 is dus niet per definitie toekomstig.\n\n"
-        + _NL_TAALGEBRUIK
     )
+    if feedback_profile and feedback_profile.strip():
+        base += (
+            "FEEDBACK-AANPAK VAN DE OPLEIDING — volg deze richtlijnen, toon en aandachtspunten "
+            "nauwgezet; ze weerspiegelen hoe deze opleiding haar studenten begeleidt:\n"
+            f"{feedback_profile.strip()}\n\n"
+        )
+    return base + _NL_TAALGEBRUIK
 
 
 def _build_user_prompt(rubric_text: str, document_text: str,
@@ -81,9 +102,15 @@ def _build_user_prompt(rubric_text: str, document_text: str,
 
     cacheable_prefix = f"""{detect_instr}Hieronder staan eerst de BEOORDELINGSRUBRIC en daarna het volledige STUDENTDOCUMENT.
 
-Beoordeel het document onderdeel voor onderdeel volgens de rubric. Bepaal per
-rubric-onderdeel een oordeel en, waar relevant, concrete bevindingen die je aan een
-EXACTE passage in het document kunt koppelen.
+Geef per rubric-onderdeel FORMATIEVE feedback: benoem kort wat sterk is en — vooral —
+wat de student concreet kan verbeteren en hoe. Koppel bevindingen aan een EXACTE passage
+in het document. Geef GEEN cijfer, score of eindoordeel.
+
+Het document bevat het onderzoeksrapport en, mogelijk verderop of tussen de bijlagen,
+het BEROEPSPRODUCT (bijv. een adviesnota, advies, ontwerp, implementatieplan of analyse).
+Geef feedback op het rapport én op het beroepsproduct (dat hoort bij de Deel B-onderdelen
+van de rubric). De overige bijlagen (interviews, bronnen, ruwe data) zijn steunmateriaal —
+geef daar GEEN feedback op.
 
 ZEER BELANGRIJK voor elke bevinding:
 - "quote" MOET een letterlijk (verbatim) overgenomen stuk tekst uit het document zijn,
@@ -100,23 +127,22 @@ Geef je antwoord UITSLUITEND als geldige JSON, zonder extra tekst eromheen, in d
 {pt_field}  "rubric_items": [
     {{
       "naam": "<naam van het rubric-onderdeel, bv. Methode>",
-      "score": "<jouw oordeel/score in de termen van de rubric, bv. 'Voldoende (6)'>",
-      "oordeel": "<beknopte onderbouwing van de score, 2-5 zinnen>",
+      "feedback": "<formatieve samenvatting: wat is sterk en wat kan beter — GEEN cijfer>",
       "findings": [
         {{
           "quote": "<verbatim passage uit het document>",
-          "severity": "<violation | warning | info>",
-          "comment": "<jouw concrete opmerking bij deze passage>",
-          "suggestie": "<optioneel: concreet verbeteradvies, of leeg>"
+          "severity": "<belangrijk | aandachtspunt | tip>",
+          "comment": "<concrete, opbouwende feedback bij deze passage>",
+          "suggestie": "<concreet verbeteradvies, of leeg>"
         }}
       ]
     }}
   ],
-  "eindbeeld": "<korte slotalinea: algeheel beeld + belangrijkste verbeterpunten>"
+  "eindbeeld": "<formatieve slotalinea: de belangrijkste punten om aan te werken>"
 }}
 
-severity-richtlijn: "violation" = duidelijke tekortkoming/fout; "warning" = aandachtspunt;
-"info" = neutrale observatie of suggestie.
+severity: "belangrijk" = hier is echt aandacht nodig; "aandachtspunt" = kan beter;
+"tip" = kleine suggestie.
 
 === BEOORDELINGSRUBRIC ===
 {rubric_text}
@@ -177,22 +203,24 @@ def _call_llm(system_prompt: str, cacheable_prefix: str, document_block: str,
 
 def estimate_run(rubric_text: str, docx_path: str, product_type: str = '',
                  model: str = None, detect_product_type: bool = False,
-                 include_annexes: bool = False) -> dict:
+                 include_annexes: bool = False, feedback_profile: str = '') -> dict:
     """
     Schat tokengebruik en kosten VOORAF in, zonder de API aan te roepen
     (heuristisch op basis van tekenaantal). Wordt getoond vóór bevestiging.
     """
     model = model or DEFAULT_MODEL
+    pt_for_bp = 'automatisch te bepalen' if detect_product_type else (product_type or '')
     full_text, _paras, headings = document_parsing.parse_document(docx_path)
     if include_annexes:
         analyze_text = full_text
-        annex_info = {'stripped': False, 'annex_heading': None,
+        annex_info = {'stripped': False, 'annex_heading': None, 'beroepsproduct': None,
                       'chars_total': len(full_text), 'chars_analyzed': len(full_text)}
     else:
-        analyze_text, annex_info = _strip_annexes(full_text, headings, docx_path)
+        analyze_text, annex_info = _strip_annexes(full_text, headings, docx_path, pt_for_bp)
 
     system_prompt = _build_system_prompt(
-        'automatisch te bepalen' if detect_product_type else (product_type or 'Onbekend'))
+        'automatisch te bepalen' if detect_product_type else (product_type or 'Onbekend'),
+        feedback_profile)
     prefix, doc_block = _build_user_prompt(rubric_text, analyze_text, detect_product_type)
 
     input_chars = len(system_prompt) + len(prefix) + len(doc_block)
@@ -308,10 +336,69 @@ def _find_annex_start_bold(docx_path: str, full_text: str,
     return None, None
 
 
-def _strip_annexes(full_text: str, headings: list[dict],
-                   docx_path: str | None = None) -> tuple[str, dict]:
+# Het BEROEPSPRODUCT moet wél beoordeeld worden (Deel B), ook al staat het tussen
+# of na de bijlagen. We herkennen het op koptekst — generiek + producttype-specifiek.
+_BEROEPSPRODUCT_GENERIC = ['beroepsproduct', 'beroepsprodukt', 'het product', 'productnaam']
+_BEROEPSPRODUCT_SPECIFIC = {
+    'advies':    ['advies', 'adviesnota', 'adviesrapport', 'advisnota', 'adviesbrief', 'adviesdocument'],
+    'ontwerp':   ['ontwerp', 'implementatieplan', 'blauwdruk', 'stappenplan', 'ontwerpplan'],
+    'analyse':   ['analyse', 'analyserapport', 'analysedocument'],
+    'fabricaat': ['fabricaat', 'handleiding', 'testverslag', 'prototype'],
+    'pva':       ['plan van aanpak'],
+}
+
+
+def _beroepsproduct_keywords(product_type: str) -> list[str]:
+    pt = (product_type or '').lower()
+    kws = list(_BEROEPSPRODUCT_GENERIC)
+    auto = (not pt) or 'automatisch' in pt or 'onbekend' in pt
+    for key, words in _BEROEPSPRODUCT_SPECIFIC.items():
+        if auto or key in pt:
+            kws += words
+    return kws
+
+
+def _heading_is_beroepsproduct(text: str, kws: list[str]) -> bool:
+    cleaned = re.sub(r'^\s*\d+(\.\d+)*\.?\s*', '', (text or '').lower())
+    cleaned = re.sub(r'^(?:bijlage|annex|appendix)\s*\w*\s*[:.\-]?\s*', '', cleaned).strip()
+    return any(re.search(r'\b' + re.escape(kw) + r'\b', cleaned) for kw in kws)
+
+
+def _find_beroepsproduct_ranges(full_text: str, headings: list[dict],
+                                product_type: str, search_from: int) -> list[tuple[int, int, str]]:
     """
-    Knip de bijlagen weg, maar behoud het voetnoten/eindnoten-blok (bronvermelding).
+    Zoek beroepsproduct-secties op koptekst vanaf `search_from` (de bijlage-grens).
+    Returns lijst van (start_char, end_char, heading_text). Meestal precies één.
+    """
+    kws = _beroepsproduct_keywords(product_type)
+    fn_marker = full_text.find('[VOETNOTEN/EINDNOTEN]')
+    body_end = fn_marker if fn_marker != -1 else len(full_text)
+    hs = sorted((h for h in headings if h.get('start_char', -1) >= 0),
+                key=lambda x: x['start_char'])
+    ranges = []
+    for i, h in enumerate(hs):
+        if h['start_char'] < search_from:
+            continue
+        if not _heading_is_beroepsproduct(h.get('text', ''), kws):
+            continue
+        lvl = h.get('level', 1)
+        end = body_end
+        for j in range(i + 1, len(hs)):
+            if hs[j]['level'] <= lvl:
+                end = min(hs[j]['start_char'], body_end)
+                break
+        ranges.append((h['start_char'], end, (h.get('text') or '').strip()))
+    return ranges
+
+
+def _strip_annexes(full_text: str, headings: list[dict],
+                   docx_path: str | None = None,
+                   product_type: str = '') -> tuple[str, dict]:
+    """
+    Knip de bijlagen weg, maar:
+      - behoud het voetnoten/eindnoten-blok (bronvermelding), en
+      - vis het BEROEPSPRODUCT eruit en houd dat erbij (Deel B-beoordeling),
+        ook al staat het tussen of na de bijlagen.
     Probeert eerst echte kopstijlen, daarna vet/hoofdletter-koppen.
     Returns (te_analyseren_tekst, info-dict).
     """
@@ -320,12 +407,27 @@ def _strip_annexes(full_text: str, headings: list[dict],
         start, htxt = _find_annex_start_bold(docx_path, full_text, headings)
     if start is None:
         return full_text, {'stripped': False, 'annex_heading': None,
+                           'beroepsproduct': None,
                            'chars_total': len(full_text), 'chars_analyzed': len(full_text)}
+
     fn_marker = full_text.find('[VOETNOTEN/EINDNOTEN]')
     body = full_text[:start].rstrip()
+
+    # Beroepsproduct uit de bijlage-zone halen en toevoegen
+    bp_ranges = _find_beroepsproduct_ranges(full_text, headings, product_type, start)
+    bp_heading = None
+    for (bps, bpe, bptext) in bp_ranges:
+        segment = full_text[bps:bpe].strip()
+        if segment:
+            body += '\n\n[BEROEPSPRODUCT]\n' + segment
+            bp_heading = bp_heading or bptext
+
+    # Voetnoten/eindnoten weer aanplakken
     if fn_marker != -1 and fn_marker > start:
-        body = body + '\n\n' + full_text[fn_marker:]
+        body += '\n\n' + full_text[fn_marker:]
+
     return body, {'stripped': True, 'annex_heading': htxt,
+                  'beroepsproduct': bp_heading,
                   'chars_total': len(full_text), 'chars_analyzed': len(body)}
 
 
@@ -361,6 +463,7 @@ def run_holistic_analysis(
     output_path: str | None = None,
     detect_product_type: bool = False,
     include_annexes: bool = False,
+    feedback_profile: str = '',
 ) -> dict:
     """
     Voer de holistische analyse uit en plaats Word-comments via de bestaande engine.
@@ -384,19 +487,21 @@ def run_holistic_analysis(
         raise RuntimeError("Kon geen tekst uit het document halen (leeg of onleesbaar).")
 
     # 1b. Bijlagen standaard wegknippen (scheelt veel tokens en is geen beoordelingsstof)
+    pt_for_bp = 'automatisch te bepalen' if detect_product_type else product_type
     if include_annexes:
         analyze_text = full_text
-        annex_info = {'stripped': False, 'annex_heading': None,
+        annex_info = {'stripped': False, 'annex_heading': None, 'beroepsproduct': None,
                       'chars_total': len(full_text), 'chars_analyzed': len(full_text)}
     else:
-        analyze_text, annex_info = _strip_annexes(full_text, headings, docx_path)
+        analyze_text, annex_info = _strip_annexes(full_text, headings, docx_path, pt_for_bp)
         if annex_info['stripped']:
-            logger.info("Bijlagen overgeslagen vanaf koptekst %r (%d -> %d tekens)",
-                        annex_info['annex_heading'],
+            logger.info("Bijlagen overgeslagen vanaf %r | beroepsproduct=%r (%d -> %d tekens)",
+                        annex_info['annex_heading'], annex_info.get('beroepsproduct'),
                         annex_info['chars_total'], annex_info['chars_analyzed'])
 
     # 2. LLM-call (met prompt-caching op systeemprompt + rubric)
-    system_prompt = _build_system_prompt('automatisch te bepalen' if detect_product_type else product_type)
+    system_prompt = _build_system_prompt(
+        'automatisch te bepalen' if detect_product_type else product_type, feedback_profile)
     cacheable_prefix, document_block = _build_user_prompt(rubric_text, analyze_text, detect_product_type)
     llm = _call_llm(system_prompt, cacheable_prefix, document_block, model)
     logger.info("LLM klaar | in=%d out=%d cache_read=%d cache_created=%d",
@@ -419,9 +524,8 @@ def run_holistic_analysis(
         naam = (item.get('naam') or 'Onderdeel').strip()
         for f in item.get('findings', []) or []:
             quote = (f.get('quote') or '').strip()
-            severity = (f.get('severity') or 'info').strip().lower()
-            if severity not in _SEVERITY_COLOR:
-                severity = 'info'
+            sev_label = (f.get('severity') or 'tip').strip().lower()
+            status = _SEVERITY_MAP.get(sev_label, 'info')
             comment = (f.get('comment') or '').strip()
             suggestie = (f.get('suggestie') or '').strip()
             if not comment and not quote:
@@ -437,12 +541,13 @@ def run_holistic_analysis(
                 # Rubric-naam als ZACHTE plaatsings-hint; de engine valt terug op
                 # document-brede zoektocht naar het citaat als de naam geen heading raakt.
                 'section_name':      naam,
-                'status':            severity,
+                'status':            status,
+                'severity_label':    sev_label,
                 'message':           comment,
                 'suggestion':        suggestie,
                 'offending_snippet': quote,
                 'confidence':        1.0,
-                'color':             _SEVERITY_COLOR[severity],
+                'color':             _STATUS_COLOR[status],
                 'check_type':        'holistic',
                 '_locatable':        locatable,
             }

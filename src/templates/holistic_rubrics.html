@@ -38,6 +38,14 @@
     <label for="rubric_file">Beoordelingsformulier (.xlsx)</label>
     <input type="file" id="rubric_file" name="rubric_file" accept=".xlsx,.xlsm" required>
     <div class="holo-hint">De rubric-tekst wordt uit alle tabbladen (beroepsproducten) gehaald en bewaard.</div>
+
+    <label for="feedback_profile">Feedback-aanpak van de opleiding (optioneel)</label>
+    <textarea id="feedback_profile" name="feedback_profile" rows="6"
+              style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.95em;"
+              placeholder="Hoe geeft jullie opleiding feedback? Toon, focuspunten, veelgemaakte fouten, voorbeelden van goede feedback…"></textarea>
+    <div class="holo-hint">Dit is de feedback-expertise van de school. De AI gebruikt deze toon en
+      aandachtspunten bij elke analyse met deze rubric — zo krijgt de student “de feedback van de school”.</div>
+
     <button class="holo-btn" type="submit">Opslaan</button>
   </form>
 </div>
@@ -46,12 +54,13 @@
   <h2>Opgeslagen rubrics ({{ saved_rubrics|length }})</h2>
   {% if saved_rubrics %}
     <table class="holo">
-      <thead><tr><th>Naam</th><th>Beroepsproducten</th><th>Opgeslagen</th><th></th></tr></thead>
+      <thead><tr><th>Naam</th><th>Beroepsproducten</th><th>Feedback-aanpak</th><th>Opgeslagen</th><th></th></tr></thead>
       <tbody>
         {% for r in saved_rubrics %}
           <tr>
             <td><strong>{{ r.name }}</strong></td>
             <td>{% for t in r.tab_names %}<span class="tag">{{ t }}</span>{% endfor %}</td>
+            <td>{% if r.has_profile %}✅ ingesteld{% else %}—{% endif %}</td>
             <td>{{ r.created_at[:10] }}</td>
             <td>
               <form method="POST" action="{{ url_for('holistic_rubric_delete', rubric_id=r.id) }}"

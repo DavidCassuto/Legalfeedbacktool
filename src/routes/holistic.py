@@ -65,10 +65,12 @@ def holistic_run():
     saved_rubric_id = (request.form.get('saved_rubric_id') or '').strip()
     product_type = (request.form.get('product_type') or AUTO_DETECT).strip()
     include_annexes = bool(request.form.get('include_annexes'))
+    feedback_profile = (request.form.get('feedback_profile') or '').strip()
 
     def _back():
         form = {'rubric_text': rubric_text, 'product_type': product_type,
-                'include_annexes': include_annexes, 'saved_rubric_id': saved_rubric_id}
+                'include_annexes': include_annexes, 'saved_rubric_id': saved_rubric_id,
+                'feedback_profile': feedback_profile}
         return render_template('holistic.html', product_types=PRODUCT_TYPES,
                                auto_detect=AUTO_DETECT, form=form,
                                saved_rubrics=_saved_rubrics())
@@ -97,6 +99,11 @@ def holistic_run():
         if not rubric_text:
             flash('De gekozen opgeslagen rubric kon niet geladen worden.', 'danger')
             return _back()
+        # Feedback-aanpak uit de opgeslagen rubric overnemen (tenzij hier overschreven)
+        if not feedback_profile:
+            rec = rubric_library.get_rubric(current_app.config['UPLOAD_FOLDER'], saved_rubric_id)
+            if rec:
+                feedback_profile = (rec.get('feedback_profile') or '').strip()
     elif rubric_file and rubric_file.filename:
         if not rubric_file.filename.lower().endswith(('.xlsx', '.xlsm')):
             flash('Het beoordelingsformulier moet een Excel-bestand zijn (.xlsx).', 'danger')
@@ -123,7 +130,7 @@ def holistic_run():
         estimate = holistic_analysis.estimate_run(
             rubric_text=rubric_text, docx_path=in_path,
             product_type=use_pt, detect_product_type=detect,
-            include_annexes=include_annexes,
+            include_annexes=include_annexes, feedback_profile=feedback_profile,
         )
     except Exception as e:
         logger.error("Kostenschatting mislukt: %s", e)
@@ -135,6 +142,7 @@ def holistic_run():
     job = {
         'in_path': in_path, 'out_path': out_path, 'rubric_text': rubric_text,
         'product_type': use_pt, 'detect': detect, 'include_annexes': include_annexes,
+        'feedback_profile': feedback_profile,
         'safe_name': safe_name, 'model': estimate['model'],
     }
     with open(os.path.join(work_dir, f"{token}_job.json"), 'w', encoding='utf-8') as f:
@@ -144,7 +152,8 @@ def holistic_run():
         'holistic.html', product_types=PRODUCT_TYPES, auto_detect=AUTO_DETECT,
         saved_rubrics=_saved_rubrics(),
         form={'rubric_text': rubric_text, 'product_type': product_type,
-              'include_annexes': include_annexes, 'saved_rubric_id': saved_rubric_id},
+              'include_annexes': include_annexes, 'saved_rubric_id': saved_rubric_id,
+              'feedback_profile': feedback_profile},
         estimate=estimate, job_token=token, original_name=safe_name,
     )
 
@@ -175,6 +184,7 @@ def holistic_analyze():
             output_path=job['out_path'],
             detect_product_type=job['detect'],
             include_annexes=job['include_annexes'],
+            feedback_profile=job.get('feedback_profile', ''),
             model=job.get('model') or holistic_analysis.DEFAULT_MODEL,
         )
     except Exception as e:
@@ -218,6 +228,7 @@ def holistic_rubrics():
 def holistic_rubric_add():
     """Upload een Excel-formulier en bewaar het als herbruikbare rubric."""
     name = (request.form.get('name') or '').strip()
+    feedback_profile = (request.form.get('feedback_profile') or '').strip()
     rubric_file = request.files.get('rubric_file')
     if not rubric_file or not rubric_file.filename:
         flash('Selecteer een Excel-bestand (.xlsx).', 'danger')
@@ -232,7 +243,8 @@ def holistic_rubric_add():
     try:
         if not name:
             name = os.path.splitext(rubric_file.filename)[0]
-        rec = rubric_library.save_rubric(current_app.config['UPLOAD_FOLDER'], name, tmp)
+        rec = rubric_library.save_rubric(current_app.config['UPLOAD_FOLDER'], name, tmp,
+                                         feedback_profile=feedback_profile)
         flash(f"Rubric '{rec['name']}' opgeslagen ({len(rec['tabs'])} beroepsproducten).", 'success')
     except Exception as e:
         logger.error("Rubric opslaan mislukt: %s", e)

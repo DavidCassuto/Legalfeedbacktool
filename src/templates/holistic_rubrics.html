@@ -39,14 +39,31 @@
     <input type="file" id="rubric_file" name="rubric_file" accept=".xlsx,.xlsm" required>
     <div class="holo-hint">De rubric-tekst wordt uit alle tabbladen (beroepsproducten) gehaald en bewaard.</div>
 
-    <label for="feedback_profile">Feedback-aanpak van de opleiding (optioneel)</label>
-    <textarea id="feedback_profile" name="feedback_profile" rows="6"
-              style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.95em;"
-              placeholder="Hoe geeft jullie opleiding feedback? Toon, focuspunten, veelgemaakte fouten, voorbeelden van goede feedback…"></textarea>
-    <div class="holo-hint">Dit is de feedback-expertise van de school. De AI gebruikt deze toon en
-      aandachtspunten bij elke analyse met deze rubric — zo krijgt de student “de feedback van de school”.</div>
+    <div class="holo-hint" style="margin-top:14px;">De velden hieronder zijn <strong>kant-en-klaar ingevuld</strong>
+      met een standaardset. Pas aan wat jullie opleiding anders wil — anders blijft de standaard gelden.</div>
 
-    <button class="holo-btn" type="submit">Opslaan</button>
+    <label>
+      <input type="checkbox" name="taal_enabled" value="1" checked> 2. Taalfouten (spelling/grammatica) — markeren
+    </label>
+    <textarea name="taal_instructies" rows="3"
+      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;">{{ defaults.taal_instructies }}</textarea>
+
+    <label style="margin-top:12px;">
+      <input type="checkbox" name="stijl_enabled" value="1" checked> 3. Juridische schrijfkwaliteit — als comment
+    </label>
+    <textarea name="stijl_instructies" rows="3"
+      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;">{{ defaults.stijl_instructies }}</textarea>
+
+    <label style="margin-top:12px;">4. Toon van de feedback</label>
+    <textarea name="toon" rows="3"
+      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;">{{ defaults.toon }}</textarea>
+
+    <label style="margin-top:12px; font-weight:500;">
+      <input type="checkbox" name="show_suggestions" value="1" checked> Suggesties tonen (oplossingsrichting meegeven)
+    </label>
+    <div class="holo-hint">Inhoudelijke eisen per onderdeel (categorie 1) komen uit de tabbladen van het Excel-bestand zelf.</div>
+
+    <button class="holo-btn" type="submit" style="margin-top:14px;">Opslaan</button>
   </form>
 </div>
 
@@ -60,7 +77,7 @@
           <tr>
             <td><strong>{{ r.name }}</strong></td>
             <td>{% for t in r.tab_names %}<span class="tag">{{ t }}</span>{% endfor %}</td>
-            <td>{% if r.has_profile %}✅ ingesteld{% else %}—{% endif %}</td>
+            <td>{% if r.has_config %}✅ ingesteld{% else %}standaard{% endif %}</td>
             <td>{{ r.created_at[:10] }}</td>
             <td>
               <form method="POST" action="{{ url_for('holistic_rubric_delete', rubric_id=r.id) }}"

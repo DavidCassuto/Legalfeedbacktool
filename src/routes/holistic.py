@@ -65,14 +65,19 @@ def holistic_run():
     saved_rubric_id = (request.form.get('saved_rubric_id') or '').strip()
     product_type = (request.form.get('product_type') or AUTO_DETECT).strip()
     include_annexes = bool(request.form.get('include_annexes'))
-    feedback_profile = (request.form.get('feedback_profile') or '').strip()
+    taal_enabled = bool(request.form.get('taal_enabled'))
+    stijl_enabled = bool(request.form.get('stijl_enabled'))
+    show_suggestions = bool(request.form.get('show_suggestions'))
+
+    def _form_state():
+        return {'rubric_text': rubric_text, 'product_type': product_type,
+                'include_annexes': include_annexes, 'saved_rubric_id': saved_rubric_id,
+                'taal_enabled': taal_enabled, 'stijl_enabled': stijl_enabled,
+                'show_suggestions': show_suggestions}
 
     def _back():
-        form = {'rubric_text': rubric_text, 'product_type': product_type,
-                'include_annexes': include_annexes, 'saved_rubric_id': saved_rubric_id,
-                'feedback_profile': feedback_profile}
         return render_template('holistic.html', product_types=PRODUCT_TYPES,
-                               auto_detect=AUTO_DETECT, form=form,
+                               auto_detect=AUTO_DETECT, form=_form_state(),
                                saved_rubrics=_saved_rubrics())
 
     # Validatie: studentdocument
@@ -93,17 +98,17 @@ def holistic_run():
     #   1) opgeslagen rubric uit de bibliotheek  2) geüpload Excel  3) geplakte tekst
     detect = (product_type == AUTO_DETECT)
     use_pt = '' if detect else product_type
+    saved_cfg = {}
     if saved_rubric_id:
         rubric_text, _available = rubric_library.build_text_from_saved(
             current_app.config['UPLOAD_FOLDER'], saved_rubric_id, use_pt or None)
         if not rubric_text:
             flash('De gekozen opgeslagen rubric kon niet geladen worden.', 'danger')
             return _back()
-        # Feedback-aanpak uit de opgeslagen rubric overnemen (tenzij hier overschreven)
-        if not feedback_profile:
-            rec = rubric_library.get_rubric(current_app.config['UPLOAD_FOLDER'], saved_rubric_id)
-            if rec:
-                feedback_profile = (rec.get('feedback_profile') or '').strip()
+        # Tekstuele feedback-instellingen (instructies/toon) uit de opgeslagen rubric overnemen
+        rec = rubric_library.get_rubric(current_app.config['UPLOAD_FOLDER'], saved_rubric_id)
+        if rec:
+            saved_cfg = rec.get('feedback_config') or {}
     elif rubric_file and rubric_file.filename:
         if not rubric_file.filename.lower().endswith(('.xlsx', '.xlsm')):
             flash('Het beoordelingsformulier moet een Excel-bestand zijn (.xlsx).', 'danger')
@@ -125,12 +130,23 @@ def holistic_run():
 
     out_path = os.path.join(work_dir, f"{token}_gecommentarieerd_{safe_name}")
 
+    # Feedback-configuratie: aan/uit + suggesties van dit formulier; instructies/toon
+    # uit de opgeslagen rubric (of standaarden).
+    feedback_config = {
+        'taal_enabled':      taal_enabled,
+        'stijl_enabled':     stijl_enabled,
+        'show_suggestions':  show_suggestions,
+        'taal_instructies':  saved_cfg.get('taal_instructies', ''),
+        'stijl_instructies': saved_cfg.get('stijl_instructies', ''),
+        'toon':              saved_cfg.get('toon', ''),
+    }
+
     # Kostenschatting (zonder API)
     try:
         estimate = holistic_analysis.estimate_run(
             rubric_text=rubric_text, docx_path=in_path,
             product_type=use_pt, detect_product_type=detect,
-            include_annexes=include_annexes, feedback_profile=feedback_profile,
+            include_annexes=include_annexes, feedback_config=feedback_config,
         )
     except Exception as e:
         logger.error("Kostenschatting mislukt: %s", e)
@@ -142,7 +158,7 @@ def holistic_run():
     job = {
         'in_path': in_path, 'out_path': out_path, 'rubric_text': rubric_text,
         'product_type': use_pt, 'detect': detect, 'include_annexes': include_annexes,
-        'feedback_profile': feedback_profile,
+        'feedback_config': feedback_config,
         'safe_name': safe_name, 'model': estimate['model'],
     }
     with open(os.path.join(work_dir, f"{token}_job.json"), 'w', encoding='utf-8') as f:
@@ -150,10 +166,7 @@ def holistic_run():
 
     return render_template(
         'holistic.html', product_types=PRODUCT_TYPES, auto_detect=AUTO_DETECT,
-        saved_rubrics=_saved_rubrics(),
-        form={'rubric_text': rubric_text, 'product_type': product_type,
-              'include_annexes': include_annexes, 'saved_rubric_id': saved_rubric_id,
-              'feedback_profile': feedback_profile},
+        saved_rubrics=_saved_rubrics(), form=_form_state(),
         estimate=estimate, job_token=token, original_name=safe_name,
     )
 
@@ -184,7 +197,7 @@ def holistic_analyze():
             output_path=job['out_path'],
             detect_product_type=job['detect'],
             include_annexes=job['include_annexes'],
-            feedback_profile=job.get('feedback_profile', ''),
+            feedback_config=job.get('feedback_config') or {},
             model=job.get('model') or holistic_analysis.DEFAULT_MODEL,
         )
     except Exception as e:
@@ -221,14 +234,26 @@ def holistic_download(naam):
 @login_required
 def holistic_rubrics():
     """Beheerpagina: opgeslagen rubrics tonen + nieuwe toevoegen."""
-    return render_template('holistic_rubrics.html', saved_rubrics=_saved_rubrics())
+    return render_template('holistic_rubrics.html', saved_rubrics=_saved_rubrics(),
+                           defaults={
+                               'taal_instructies':  holistic_analysis.DEFAULT_TAAL_INSTRUCTIES,
+                               'stijl_instructies': holistic_analysis.DEFAULT_STIJL_INSTRUCTIES,
+                               'toon':              holistic_analysis.DEFAULT_TOON,
+                           })
 
 
 @login_required
 def holistic_rubric_add():
     """Upload een Excel-formulier en bewaar het als herbruikbare rubric."""
     name = (request.form.get('name') or '').strip()
-    feedback_profile = (request.form.get('feedback_profile') or '').strip()
+    feedback_config = {
+        'taal_enabled':      bool(request.form.get('taal_enabled')),
+        'taal_instructies':  (request.form.get('taal_instructies') or '').strip(),
+        'stijl_enabled':     bool(request.form.get('stijl_enabled')),
+        'stijl_instructies': (request.form.get('stijl_instructies') or '').strip(),
+        'toon':              (request.form.get('toon') or '').strip(),
+        'show_suggestions':  bool(request.form.get('show_suggestions')),
+    }
     rubric_file = request.files.get('rubric_file')
     if not rubric_file or not rubric_file.filename:
         flash('Selecteer een Excel-bestand (.xlsx).', 'danger')
@@ -244,7 +269,7 @@ def holistic_rubric_add():
         if not name:
             name = os.path.splitext(rubric_file.filename)[0]
         rec = rubric_library.save_rubric(current_app.config['UPLOAD_FOLDER'], name, tmp,
-                                         feedback_profile=feedback_profile)
+                                         feedback_config=feedback_config)
         flash(f"Rubric '{rec['name']}' opgeslagen ({len(rec['tabs'])} beroepsproducten).", 'success')
     except Exception as e:
         logger.error("Rubric opslaan mislukt: %s", e)

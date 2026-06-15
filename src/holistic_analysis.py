@@ -20,7 +20,7 @@ from datetime import date
 
 from config import Config
 from analysis import document_parsing
-from analysis.inline_word_comments import add_inline_comments
+from analysis.inline_word_comments import add_inline_comments, add_highlights
 
 logger = logging.getLogger('docucheck.holistic')
 
@@ -51,8 +51,42 @@ _NL_TAALGEBRUIK = (
     "taalgebruik. Wees concreet, constructief en to-the-point."
 )
 
+# ── Standaard feedback-configuratie (kant-en-klaar; school overschrijft naar wens) ──
+# Categorie 1 (inhoud per onderdeel) komt uit de Excel-rubriek.
+DEFAULT_TAAL_INSTRUCTIES = (
+    "Let op spelling-, grammatica-, interpunctie- en duidelijke stijlfouten: d/t-fouten, "
+    "werkwoordsvervoeging, congruentie (onderwerp-werkwoord), verkeerd of ontbrekend "
+    "leesteken, hoofdletter-/kleinlettergebruik, en evidente typefouten."
+)
+DEFAULT_STIJL_INSTRUCTIES = (
+    "Beoordeel de juridische schrijfkwaliteit: te lange of te complexe zinnen "
+    "(tangconstructies), vaag of wollig taalgebruik, te lange of ongestructureerde "
+    "alinea's, passief waar actief beter is, inconsistent of onprecies juridisch "
+    "begrippengebruik, en gebrekkige opbouw of samenhang tussen alinea's."
+)
+DEFAULT_TOON = (
+    "Schrijf bemoedigend, respectvol en concreet, en spreek de student direct aan. "
+    "Leg uit WAAROM iets beter kan, zodat de student het leert — schrijf de tekst niet "
+    "voor de student, maar wijs de weg naar een betere formulering."
+)
+DEFAULT_MAX_PER_CATEGORIE = 8
 
-def _build_system_prompt(product_type: str, feedback_profile: str = '') -> str:
+
+def _merge_config(cfg: dict | None) -> dict:
+    """Vul een (deels lege) feedback-configuratie aan met de standaarden."""
+    cfg = dict(cfg or {})
+    return {
+        'taal_enabled':     cfg.get('taal_enabled', True),
+        'taal_instructies': (cfg.get('taal_instructies') or DEFAULT_TAAL_INSTRUCTIES).strip(),
+        'stijl_enabled':    cfg.get('stijl_enabled', True),
+        'stijl_instructies': (cfg.get('stijl_instructies') or DEFAULT_STIJL_INSTRUCTIES).strip(),
+        'toon':             (cfg.get('toon') or DEFAULT_TOON).strip(),
+        'show_suggestions': cfg.get('show_suggestions', True),
+        'max_per_categorie': int(cfg.get('max_per_categorie') or DEFAULT_MAX_PER_CATEGORIE),
+    }
+
+
+def _build_system_prompt(product_type: str, toon: str = '') -> str:
     d = date.today()
     maanden = ['januari', 'februari', 'maart', 'april', 'mei', 'juni',
                'juli', 'augustus', 'september', 'oktober', 'november', 'december']
@@ -68,31 +102,31 @@ def _build_system_prompt(product_type: str, feedback_profile: str = '') -> str:
         f"VANDAAG IS HET: {vandaag}. Beoordeel data en jaartallen ten opzichte van deze datum; "
         "een jaartal in 2025 of 2026 is dus niet per definitie toekomstig.\n\n"
     )
-    if feedback_profile and feedback_profile.strip():
-        base += (
-            "FEEDBACK-AANPAK VAN DE OPLEIDING — volg deze richtlijnen, toon en aandachtspunten "
-            "nauwgezet; ze weerspiegelen hoe deze opleiding haar studenten begeleidt:\n"
-            f"{feedback_profile.strip()}\n\n"
-        )
+    base += (
+        "Je bent een EDUCATIEVE assistent die de student helpt LEREN schrijven — geen "
+        "assistent die het schrijfwerk overneemt. Geef de student inzicht, geen kant-en-klare "
+        "herschrijving.\n\n"
+    )
+    if toon and toon.strip():
+        base += ("TOON EN STIJL VAN DE FEEDBACK (volg dit nauwgezet — zo begeleidt deze opleiding):\n"
+                 f"{toon.strip()}\n\n")
     return base + _NL_TAALGEBRUIK
 
 
 def _build_user_prompt(rubric_text: str, document_text: str,
-                       detect_product_type: bool = False) -> tuple[str, str]:
+                       detect_product_type: bool = False,
+                       cfg: dict | None = None) -> tuple[str, str]:
     """
-    Bouwt de prompt in TWEE delen:
-      - cacheable_prefix : instructies + JSON-schema + de RUBRIC. Dit deel is
-        identiek voor elke student met dezelfde rubric, dus het wordt door
-        Anthropic prompt-caching hergebruikt (goedkoper bij meerdere runs).
-      - document_block   : het studentdocument zelf (verschilt per student).
-    De volgorde is bewust: het stabiele deel staat vooraan, het variabele achteraan.
+    Bouwt de prompt in TWEE delen (stabiel-cachebaar deel + variabel document).
+    cfg = feedback-configuratie (taal/stijl aan-uit + instructies, suggesties, cap).
     """
+    cfg = _merge_config(cfg)
     if detect_product_type:
         detect_instr = (
             "Hieronder staan MEERDERE rubrieken (één per beroepsproduct: PvA, Analyse, "
             "Advies, Ontwerp, Fabricaat, Eindgesprek). Bepaal EERST, op basis van de "
             "inhoud en vorm van het document, welk beroepsproduct hier wordt beoordeeld, "
-            "en beoordeel het document UITSLUITEND volgens de bijbehorende rubric. "
+            "en geef feedback UITSLUITEND volgens de bijbehorende rubric. "
             "Vermeld het gekozen beroepsproduct in het veld \"product_type\".\n\n"
         )
         pt_field = '  "product_type": "<het door jou bepaalde beroepsproduct>",\n'
@@ -100,26 +134,54 @@ def _build_user_prompt(rubric_text: str, document_text: str,
         detect_instr = ""
         pt_field = ""
 
+    sugg_field = ('          "suggestie": "<wijs de weg naar een betere formulering, of leeg>"\n'
+                  if cfg['show_suggestions'] else '')
+    sugg_rule = ("" if cfg['show_suggestions'] else
+                 "Geef GEEN kant-en-klare oplossing of herschrijving in 'suggestie' "
+                 "(laat dat veld leeg); benoem alleen wát beter kan, zodat de student het zelf leert.\n")
+    cap = cfg['max_per_categorie']
+
+    # Categorie 2 — taalfouten (worden in het document GEMARKEERD, geen comment)
+    taal_block = ""
+    if cfg['taal_enabled']:
+        taal_block = f"""
+  "taalfouten": [
+    {{ "quote": "<verbatim foutieve tekst>", "type": "<spelling|grammatica|interpunctie|stijl>" }}
+  ],"""
+    # Categorie 3 — juridische schrijfkwaliteit (worden COMMENTS)
+    stijl_block = ""
+    if cfg['stijl_enabled']:
+        stijl_block = f"""
+  "schrijfkwaliteit": [
+    {{ "quote": "<verbatim passage>", "severity": "<belangrijk|aandachtspunt|tip>",
+       "comment": "<feedback op de schrijfkwaliteit>"{(',' + chr(10) + '       "suggestie": "<of leeg>"') if cfg['show_suggestions'] else ''} }}
+  ],"""
+
+    cat2_instr = (f"\nCATEGORIE TAALFOUTEN (spelling/grammatica/stijl) — vul \"taalfouten\". "
+                  f"Richtlijn van de opleiding: {cfg['taal_instructies']} "
+                  f"Geef maximaal {cap} REPRESENTATIEVE voorbeelden (niet elke instantie); "
+                  f"noem terugkerende fouttypes één keer.\n" if cfg['taal_enabled'] else "")
+    cat3_instr = (f"\nCATEGORIE JURIDISCHE SCHRIJFKWALITEIT — vul \"schrijfkwaliteit\". "
+                  f"Richtlijn van de opleiding: {cfg['stijl_instructies']} "
+                  f"Geef maximaal {cap} belangrijkste punten.\n" if cfg['stijl_enabled'] else "")
+
     cacheable_prefix = f"""{detect_instr}Hieronder staan eerst de BEOORDELINGSRUBRIC en daarna het volledige STUDENTDOCUMENT.
 
-Geef per rubric-onderdeel FORMATIEVE feedback: benoem kort wat sterk is en — vooral —
-wat de student concreet kan verbeteren en hoe. Koppel bevindingen aan een EXACTE passage
-in het document. Geef GEEN cijfer, score of eindoordeel.
+Geef FORMATIEVE, opbouwende feedback om de student te helpen LEREN schrijven. Geen cijfer
+of beoordeling. Koppel elke bevinding aan een EXACTE passage in het document.
 
 Het document bevat het onderzoeksrapport en, mogelijk verderop of tussen de bijlagen,
-het BEROEPSPRODUCT (bijv. een adviesnota, advies, ontwerp, implementatieplan of analyse).
-Geef feedback op het rapport én op het beroepsproduct (dat hoort bij de Deel B-onderdelen
-van de rubric). De overige bijlagen (interviews, bronnen, ruwe data) zijn steunmateriaal —
-geef daar GEEN feedback op.
+het BEROEPSPRODUCT (adviesnota, advies, ontwerp, implementatieplan of analyse). Geef feedback
+op het rapport én op het beroepsproduct (Deel B van de rubric). Overige bijlagen (interviews,
+bronnen, ruwe data) zijn steunmateriaal — geef daar GEEN feedback op.
 
-ZEER BELANGRIJK voor elke bevinding:
-- "quote" MOET een letterlijk (verbatim) overgenomen stuk tekst uit het document zijn,
-  exact zoals het er staat (zelfde woorden, leestekens, hoofdletters). Kopieer het,
-  verzin of parafraseer het NIET. Houd het kort: bij voorkeur een enkele zin of
-  deelzin (max ~25 woorden), zodat de passage eenduidig terug te vinden is.
-- Kies de quote zo dat hij precies de plek aanwijst waar je opmerking over gaat.
-- Geef alleen bevindingen die er echt toe doen. Niet elk onderdeel hoeft bevindingen
-  te hebben; een sterk onderdeel mag een leeg "findings"-lijstje hebben.
+Drie soorten feedback:
+1. INHOUD per rubric-onderdeel -> "rubric_items" (de inhoudelijke eisen uit de rubric).
+{cat2_instr}{cat3_instr}
+ZEER BELANGRIJK voor elke "quote": een letterlijk (verbatim) overgenomen stuk tekst uit het
+document, exact zoals het er staat (zelfde woorden, leestekens, hoofdletters). Kopieer het,
+verzin of parafraseer NIET. Houd het kort (één zin of deelzin). {sugg_rule}
+Geef alleen bevindingen die er echt toe doen; een sterk onderdeel mag een leeg lijstje hebben.
 
 Geef je antwoord UITSLUITEND als geldige JSON, zonder extra tekst eromheen, in dit schema:
 
@@ -130,19 +192,17 @@ Geef je antwoord UITSLUITEND als geldige JSON, zonder extra tekst eromheen, in d
       "feedback": "<formatieve samenvatting: wat is sterk en wat kan beter — GEEN cijfer>",
       "findings": [
         {{
-          "quote": "<verbatim passage uit het document>",
-          "severity": "<belangrijk | aandachtspunt | tip>",
-          "comment": "<concrete, opbouwende feedback bij deze passage>",
-          "suggestie": "<concreet verbeteradvies, of leeg>"
-        }}
+          "quote": "<verbatim passage>",
+          "severity": "<belangrijk|aandachtspunt|tip>",
+          "comment": "<concrete, opbouwende feedback>"{(',' if sugg_field else '')}
+{sugg_field}        }}
       ]
     }}
-  ],
+  ],{taal_block}{stijl_block}
   "eindbeeld": "<formatieve slotalinea: de belangrijkste punten om aan te werken>"
 }}
 
-severity: "belangrijk" = hier is echt aandacht nodig; "aandachtspunt" = kan beter;
-"tip" = kleine suggestie.
+severity: "belangrijk" = hier is echt aandacht nodig; "aandachtspunt" = kan beter; "tip" = kleine suggestie.
 
 === BEOORDELINGSRUBRIC ===
 {rubric_text}
@@ -203,7 +263,7 @@ def _call_llm(system_prompt: str, cacheable_prefix: str, document_block: str,
 
 def estimate_run(rubric_text: str, docx_path: str, product_type: str = '',
                  model: str = None, detect_product_type: bool = False,
-                 include_annexes: bool = False, feedback_profile: str = '') -> dict:
+                 include_annexes: bool = False, feedback_config: dict | None = None) -> dict:
     """
     Schat tokengebruik en kosten VOORAF in, zonder de API aan te roepen
     (heuristisch op basis van tekenaantal). Wordt getoond vóór bevestiging.
@@ -218,10 +278,11 @@ def estimate_run(rubric_text: str, docx_path: str, product_type: str = '',
     else:
         analyze_text, annex_info = _strip_annexes(full_text, headings, docx_path, pt_for_bp)
 
+    cfg = _merge_config(feedback_config)
     system_prompt = _build_system_prompt(
         'automatisch te bepalen' if detect_product_type else (product_type or 'Onbekend'),
-        feedback_profile)
-    prefix, doc_block = _build_user_prompt(rubric_text, analyze_text, detect_product_type)
+        cfg['toon'])
+    prefix, doc_block = _build_user_prompt(rubric_text, analyze_text, detect_product_type, cfg)
 
     input_chars = len(system_prompt) + len(prefix) + len(doc_block)
     input_tokens = int(input_chars / CHARS_PER_TOKEN)
@@ -463,7 +524,7 @@ def run_holistic_analysis(
     output_path: str | None = None,
     detect_product_type: bool = False,
     include_annexes: bool = False,
-    feedback_profile: str = '',
+    feedback_config: dict | None = None,
 ) -> dict:
     """
     Voer de holistische analyse uit en plaats Word-comments via de bestaande engine.
@@ -500,9 +561,11 @@ def run_holistic_analysis(
                         annex_info['chars_total'], annex_info['chars_analyzed'])
 
     # 2. LLM-call (met prompt-caching op systeemprompt + rubric)
+    cfg = _merge_config(feedback_config)
     system_prompt = _build_system_prompt(
-        'automatisch te bepalen' if detect_product_type else product_type, feedback_profile)
-    cacheable_prefix, document_block = _build_user_prompt(rubric_text, analyze_text, detect_product_type)
+        'automatisch te bepalen' if detect_product_type else product_type, cfg['toon'])
+    cacheable_prefix, document_block = _build_user_prompt(
+        rubric_text, analyze_text, detect_product_type, cfg)
     llm = _call_llm(system_prompt, cacheable_prefix, document_block, model)
     logger.info("LLM klaar | in=%d out=%d cache_read=%d cache_created=%d",
                 llm['input_tokens'], llm['output_tokens'],
@@ -510,79 +573,97 @@ def run_holistic_analysis(
 
     data = _parse_json(llm['text'])
     rubric_items = data.get('rubric_items', []) or []
+    schrijfkwaliteit = data.get('schrijfkwaliteit', []) or []
+    taalfouten = data.get('taalfouten', []) or []
     eindbeeld = data.get('eindbeeld', '') or ''
-    # Door de LLM bepaald beroepsproduct (auto-detect) — anders de meegegeven keuze
     detected_product_type = (data.get('product_type') or '').strip() or product_type
 
-    # 3. Bevindingen omzetten naar feedback-items voor de comment-engine
+    show_sugg = cfg['show_suggestions']
     norm_paras = [_normalize(p) for p in paragraphs]
-    feedback_items: list[dict] = []
+    comment_items: list[dict] = []
     unplaced: list[dict] = []
-    placed_count = 0
 
+    def _add_comment(naam, f, check_type):
+        quote = (f.get('quote') or '').strip()
+        comment = (f.get('comment') or '').strip()
+        if not comment and not quote:
+            return
+        sev_label = (f.get('severity') or 'tip').strip().lower()
+        status = _SEVERITY_MAP.get(sev_label, 'info')
+        suggestie = (f.get('suggestie') or '').strip() if show_sugg else ''
+        locatable = _quote_is_locatable(quote, norm_paras)
+        fi = {
+            'criteria_id': None, 'criteria_name': naam, 'section_name': naam,
+            'status': status, 'severity_label': sev_label,
+            'message': comment, 'suggestion': suggestie,
+            'offending_snippet': quote, 'confidence': 1.0,
+            'color': _STATUS_COLOR[status], 'check_type': check_type,
+            '_locatable': locatable,
+        }
+        comment_items.append(fi)
+        if not locatable:
+            unplaced.append(fi)
+
+    # Categorie 1: inhoud per rubric-onderdeel -> comments
     for item in rubric_items:
         naam = (item.get('naam') or 'Onderdeel').strip()
         for f in item.get('findings', []) or []:
-            quote = (f.get('quote') or '').strip()
-            sev_label = (f.get('severity') or 'tip').strip().lower()
-            status = _SEVERITY_MAP.get(sev_label, 'info')
-            comment = (f.get('comment') or '').strip()
-            suggestie = (f.get('suggestie') or '').strip()
-            if not comment and not quote:
-                continue
+            _add_comment(naam, f, 'holistic')
+    # Categorie 3: juridische schrijfkwaliteit -> comments
+    for f in schrijfkwaliteit:
+        _add_comment('Schrijfkwaliteit', f, 'holistic')
 
-            locatable = _quote_is_locatable(quote, norm_paras)
-            if locatable:
-                placed_count += 1
+    # Categorie 2: taalfouten -> lichte MARKERING (geen comment)
+    taal_snippets = [(t.get('quote') or '').strip() for t in taalfouten
+                     if (t.get('quote') or '').strip()]
 
-            fi = {
-                'criteria_id':       None,
-                'criteria_name':     naam,
-                # Rubric-naam als ZACHTE plaatsings-hint; de engine valt terug op
-                # document-brede zoektocht naar het citaat als de naam geen heading raakt.
-                'section_name':      naam,
-                'status':            status,
-                'severity_label':    sev_label,
-                'message':           comment,
-                'suggestion':        suggestie,
-                'offending_snippet': quote,
-                'confidence':        1.0,
-                'color':             _STATUS_COLOR[status],
-                'check_type':        'holistic',
-                '_locatable':        locatable,
-            }
-            feedback_items.append(fi)
-            if not locatable:
-                unplaced.append(fi)
+    placed_count = sum(1 for fi in comment_items if fi['_locatable'])
 
-    # 4. Word-comments plaatsen via bestaande engine (recognized_sections leeg:
-    #    plaatsing leunt volledig op het verbatim citaat + rubric-naam-hint).
+    # 4. Document opbouwen: eerst comments, dan markeringen (twee stappen op één bestand)
     if output_path is None:
         base, ext = os.path.splitext(docx_path)
         output_path = f"{base}_holistisch_gecommentarieerd{ext}"
 
+    comments_tmp = output_path
+    if taal_snippets:
+        base, ext = os.path.splitext(output_path)
+        comments_tmp = f"{base}__c{ext}"
+
     add_inline_comments(
         original_docx_path=docx_path,
-        feedback_items=feedback_items,
+        feedback_items=comment_items,
         recognized_sections=[],
-        output_path=output_path,
+        output_path=comments_tmp,
     )
 
-    logger.info("Holistische analyse klaar | items=%d | geplaatst=%d | niet-geplaatst=%d",
-                len(feedback_items), placed_count, len(unplaced))
+    highlights_placed = 0
+    if taal_snippets:
+        _, highlights_placed = add_highlights(
+            comments_tmp, taal_snippets, output_path, color='yellow')
+        try:
+            if os.path.abspath(comments_tmp) != os.path.abspath(output_path):
+                os.remove(comments_tmp)
+        except OSError:
+            pass
+
+    logger.info("Holistisch klaar | comments=%d (geplaatst %d) | taalmarkeringen=%d",
+                len(comment_items), placed_count, highlights_placed)
 
     return {
-        'rubric_items':   rubric_items,
-        'eindbeeld':      eindbeeld,
-        'product_type':   detected_product_type,
-        'annex_info':     annex_info,
-        'feedback_items': feedback_items,
-        'placed_count':   placed_count,
-        'unplaced':       unplaced,
-        'output_path':    output_path,
-        'usage':          {'input_tokens': llm['input_tokens'],
-                           'output_tokens': llm['output_tokens'],
-                           'cache_read': llm.get('cache_read', 0),
-                           'cache_created': llm.get('cache_created', 0)},
-        'model':          model,
+        'rubric_items':     rubric_items,
+        'schrijfkwaliteit': schrijfkwaliteit,
+        'taalfouten':       taalfouten,
+        'eindbeeld':        eindbeeld,
+        'product_type':     detected_product_type,
+        'annex_info':       annex_info,
+        'feedback_items':   comment_items,
+        'placed_count':     placed_count,
+        'highlights_placed': highlights_placed,
+        'unplaced':         unplaced,
+        'output_path':      output_path,
+        'usage':            {'input_tokens': llm['input_tokens'],
+                             'output_tokens': llm['output_tokens'],
+                             'cache_read': llm.get('cache_read', 0),
+                             'cache_created': llm.get('cache_created', 0)},
+        'model':            model,
     }

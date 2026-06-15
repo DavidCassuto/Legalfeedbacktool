@@ -31,19 +31,19 @@ def _safe_id(rubric_id: str) -> str | None:
 
 
 def save_rubric(upload_folder: str, name: str, xlsx_path: str,
-                feedback_profile: str = '') -> dict:
+                feedback_config: dict | None = None) -> dict:
     """Extraheer de tabs uit het Excel-bestand en sla ze op onder een naam.
-    feedback_profile = de feedback-aanpak/expertise van de opleiding (optioneel)."""
+    feedback_config = de feedback-instellingen van de opleiding (taal/stijl/toon/suggesties)."""
     tabs = rubric_extraction.extract_rubric_tabs(xlsx_path)
     if not tabs:
         raise ValueError("Geen rubric-tekst gevonden in het Excel-bestand.")
     rubric_id = uuid.uuid4().hex[:12]
     record = {
-        'id':               rubric_id,
-        'name':             (name or 'Naamloze rubric').strip(),
-        'tabs':             tabs,
-        'feedback_profile': (feedback_profile or '').strip(),
-        'created_at':       datetime.now().isoformat(timespec='seconds'),
+        'id':              rubric_id,
+        'name':            (name or 'Naamloze rubric').strip(),
+        'tabs':            tabs,
+        'feedback_config': feedback_config or {},
+        'created_at':      datetime.now().isoformat(timespec='seconds'),
     }
     path = os.path.join(_library_dir(upload_folder), f"{rubric_id}.json")
     with open(path, 'w', encoding='utf-8') as f:
@@ -62,11 +62,11 @@ def list_rubrics(upload_folder: str) -> list[dict]:
             with open(os.path.join(d, fn), encoding='utf-8') as f:
                 rec = json.load(f)
             out.append({
-                'id':          rec['id'],
-                'name':        rec.get('name', ''),
-                'tab_names':   list((rec.get('tabs') or {}).keys()),
-                'has_profile': bool((rec.get('feedback_profile') or '').strip()),
-                'created_at':  rec.get('created_at', ''),
+                'id':         rec['id'],
+                'name':       rec.get('name', ''),
+                'tab_names':  list((rec.get('tabs') or {}).keys()),
+                'has_config': bool(rec.get('feedback_config')),
+                'created_at': rec.get('created_at', ''),
             })
         except (json.JSONDecodeError, KeyError, OSError):
             continue

@@ -21,6 +21,7 @@ import re
 import shutil
 import zipfile
 import logging
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple
 
@@ -371,6 +372,153 @@ def _place_markers_around_snippet(
     last_run[1].addnext(cre)
 
     return True
+
+
+# ---------------------------------------------------------------------------
+# Lichte MARKERING (arcering / onderstreping) i.p.v. comments
+# Voor taalfouten: de student ziet de plek, zonder zware comment-ballon.
+# ---------------------------------------------------------------------------
+
+_XML_SPACE = '{http://www.w3.org/XML/1998/namespace}space'
+
+
+def _ensure_rpr(run):
+    rPr = run.find(f'{{{W_NS}}}rPr')
+    if rPr is None:
+        rPr = etree.Element(f'{{{W_NS}}}rPr')
+        run.insert(0, rPr)
+    return rPr
+
+
+def _apply_mark_to_rpr(rPr, color: Optional[str], underline: bool):
+    if color:
+        for ex in rPr.findall(f'{{{W_NS}}}highlight'):
+            rPr.remove(ex)
+        hl = etree.SubElement(rPr, f'{{{W_NS}}}highlight')
+        hl.set(f'{{{W_NS}}}val', color)
+    if underline:
+        for ex in rPr.findall(f'{{{W_NS}}}u'):
+            rPr.remove(ex)
+        u = etree.SubElement(rPr, f'{{{W_NS}}}u')
+        u.set(f'{{{W_NS}}}val', 'single')
+
+
+def _run_with_text(src_run, text: str, mark: bool, color: Optional[str], underline: bool):
+    new = deepcopy(src_run)
+    t = new.find(f'{{{W_NS}}}t')
+    if t is None:
+        t = etree.SubElement(new, f'{{{W_NS}}}t')
+    t.text = text
+    t.set(_XML_SPACE, 'preserve')
+    if mark:
+        _apply_mark_to_rpr(_ensure_rpr(new), color, underline)
+    return new
+
+
+def _highlight_snippet_in_para(p_el, snippet: str, color: Optional[str], underline: bool) -> bool:
+    """Markeer (arcering/onderstreping) de runs die `snippet` bevatten; splitst
+    runs zodat alleen de exacte tekst gemarkeerd wordt."""
+    runs = p_el.findall(f'{{{W_NS}}}r')
+    infos = []
+    full = ''
+    for r in runs:
+        t_el = r.find(f'{{{W_NS}}}t')
+        txt = t_el.text if (t_el is not None and t_el.text is not None) else ''
+        infos.append((r, t_el, txt, len(full), len(full) + len(txt)))
+        full += txt
+    if not full:
+        return False
+
+    def _flex(text: str):
+        toks = [re.escape(t) for t in text.split() if t]
+        return re.compile(r'\s+'.join(toks), re.IGNORECASE) if toks else None
+
+    pat = _flex(snippet.strip())
+    m = pat.search(full) if pat else None
+    if not m:
+        head = snippet.strip()[:40]
+        pat = _flex(head) if len(head) >= 8 else None
+        m = pat.search(full) if pat else None
+        if not m:
+            return False
+    s, e = m.start(), m.end()
+
+    for (r, t_el, txt, rs, re_) in infos:
+        if t_el is None or not txt or re_ <= s or rs >= e:
+            continue
+        os_ = max(s, rs) - rs
+        oe_ = min(e, re_) - rs
+        before, match, after = txt[:os_], txt[os_:oe_], txt[oe_:]
+        if not before and not after:
+            _apply_mark_to_rpr(_ensure_rpr(r), color, underline)
+            continue
+        pieces = []
+        if before:
+            pieces.append(_run_with_text(r, before, False, color, underline))
+        pieces.append(_run_with_text(r, match, True, color, underline))
+        if after:
+            pieces.append(_run_with_text(r, after, False, color, underline))
+        for nr in pieces:
+            r.addprevious(nr)
+        parent = r.getparent()
+        if parent is not None:
+            parent.remove(r)
+    return True
+
+
+def add_highlights(
+    original_docx_path: str,
+    highlight_items: List[Any],
+    output_path: str,
+    color: Optional[str] = 'yellow',
+    underline: bool = False,
+) -> Tuple[str, int]:
+    """
+    Markeer (geel/onderstreept) de aangegeven tekstfragmenten in het document,
+    ZONDER comments. `highlight_items` is een lijst van snippets (str) of dicts
+    met 'offending_snippet'. Returns (output_path, aantal_gemarkeerd).
+    """
+    snippets = []
+    for it in highlight_items:
+        s = it if isinstance(it, str) else (it.get('offending_snippet') or '')
+        s = (s or '').strip()
+        if len(s) >= 4:
+            snippets.append(s)
+
+    if not snippets:
+        if os.path.abspath(output_path) != os.path.abspath(original_docx_path):
+            shutil.copy2(original_docx_path, output_path)
+        return output_path, 0
+
+    with zipfile.ZipFile(original_docx_path, 'r') as zin:
+        files = {n: zin.read(n) for n in zin.namelist()}
+
+    parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
+    tree = etree.fromstring(files['word/document.xml'], parser)
+    body = tree.find(f'{{{W_NS}}}body')
+    paras = body.findall(f'{{{W_NS}}}p') if body is not None else []
+
+    placed = 0
+    for snip in snippets:
+        norm = re.sub(r'\s+', ' ', snip.lower().strip())
+        for p in paras:
+            ptext = ''.join(t.text or '' for t in p.findall(f'.//{{{W_NS}}}t'))
+            if not ptext:
+                continue
+            np = re.sub(r'\s+', ' ', ptext.lower())
+            if norm in np or (len(norm) >= 15 and norm[:60] in np):
+                if _highlight_snippet_in_para(p, snip, color, underline):
+                    placed += 1
+                break
+
+    files['word/document.xml'] = etree.tostring(
+        tree, xml_declaration=True, encoding='UTF-8', standalone=True)
+    with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zout:
+        for n, d in files.items():
+            zout.writestr(n, d)
+
+    logger.info("%d tekstfragment(en) gemarkeerd -> %s", placed, output_path)
+    return output_path, placed
 
 
 # ---------------------------------------------------------------------------

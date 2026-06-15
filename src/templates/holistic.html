@@ -82,22 +82,32 @@
     <div class="holo-hint">Kies het tabblad zelf, of laat de AI op basis van het document bepalen
       om welk beroepsproduct het gaat.</div>
 
-    <details style="margin-top:16px;">
-      <summary style="cursor:pointer; color:#52796F; font-weight:600;">Feedback-aanpak van de opleiding (optioneel)</summary>
-      <textarea id="feedback_profile" name="feedback_profile" style="min-height:120px;"
-                placeholder="Bijv. toon, focuspunten, veelgemaakte fouten, voorbeelden van goede feedback…">{{ form.feedback_profile if form else '' }}</textarea>
-      <div class="holo-hint">Hiermee geeft de school haar feedback-expertise mee: de AI volgt deze
-        toon en aandachtspunten. Tip: sla dit op bij de rubric in de
-        <a href="{{ url_for('holistic_rubrics') }}">bibliotheek</a>, dan staat het er voortaan automatisch bij.</div>
-    </details>
+    <fieldset style="margin-top:18px; border:1px solid #E9ECEF; border-radius:8px; padding:12px 14px;">
+      <legend style="font-weight:600; color:#52796F; padding:0 6px;">Soorten feedback</legend>
+      <label style="font-weight:500; display:block;">
+        <input type="checkbox" name="taal_enabled" value="1" {% if not form or form.taal_enabled %}checked{% endif %}>
+        Taalfouten markeren <span class="holo-hint" style="display:inline;">(spelling/grammatica — gele arcering in het document, geen comment)</span>
+      </label>
+      <label style="font-weight:500; display:block; margin-top:6px;">
+        <input type="checkbox" name="stijl_enabled" value="1" {% if not form or form.stijl_enabled %}checked{% endif %}>
+        Juridische schrijfkwaliteit <span class="holo-hint" style="display:inline;">(zinslengte, wolligheid, alinea's — als Word-comment)</span>
+      </label>
+      <label style="font-weight:500; display:block; margin-top:6px;">
+        <input type="checkbox" name="show_suggestions" value="1" {% if not form or form.show_suggestions %}checked{% endif %}>
+        Suggesties tonen <span class="holo-hint" style="display:inline;">(uit = alleen benoemen wat beter kan, de student zoekt zelf de oplossing)</span>
+      </label>
+      <div class="holo-hint" style="margin-top:8px;">Inhoudelijke feedback per onderdeel komt uit de rubriek.
+        Toon en criteria stel je in bij de rubric in de
+        <a href="{{ url_for('holistic_rubrics') }}">bibliotheek</a>.</div>
+    </fieldset>
 
     <label style="margin-top:16px; font-weight:500;">
       <input type="checkbox" name="include_annexes" value="1"
              {% if form and form.include_annexes %}checked{% endif %}>
       Bijlagen meenemen in de analyse
     </label>
-    <div class="holo-hint">Standaard worden de bijlagen overgeslagen: de analyse stopt
-      bij de eerste koptekst “Bijlage(n)”. Vink aan om het hele document te beoordelen.</div>
+    <div class="holo-hint">Standaard worden de bijlagen overgeslagen (maar het beroepsproduct wordt
+      eruit gevist). Vink aan om het hele document te beoordelen.</div>
 
     <details style="margin-top:16px;">
       <summary style="cursor:pointer; color:#52796F; font-weight:600;">Of: rubric als tekst plakken (optioneel)</summary>
@@ -142,7 +152,8 @@
     Model: <strong>{{ result.model }}</strong> &middot;
     tokens: {{ result.usage.input_tokens }} in / {{ result.usage.output_tokens }} uit
     {%- if result.usage.cache_read %} &middot; {{ result.usage.cache_read }} uit cache ♻️{% endif %} &middot;
-    feedback geplaatst: <strong>{{ result.placed_count }}</strong>
+    comments geplaatst: <strong>{{ result.placed_count }}</strong> &middot;
+    taalfouten gemarkeerd: <strong>{{ result.highlights_placed }}</strong>
     {% if result.unplaced %} &middot; <span class="sev-aandachtspunt">{{ result.unplaced|length }} niet te plaatsen</span>{% endif %}
   </p>
   {% if result.annex_info %}
@@ -185,6 +196,32 @@
     </div>
   {% endif %}
 </div>
+
+{% if result.schrijfkwaliteit %}
+<div class="holo-card">
+  <h2>Juridische schrijfkwaliteit <span class="holo-hint" style="display:inline;">(als comment in het document)</span></h2>
+  {% for f in result.schrijfkwaliteit %}
+    <div class="holo-item">
+      <div class="holo-quote">“{{ f.quote }}” {% if f.severity %}<span class="sev-{{ f.severity }}">[{{ f.severity }}]</span>{% endif %}</div>
+      <div>{{ f.comment }}{% if f.suggestie %} <em>Suggestie: {{ f.suggestie }}</em>{% endif %}</div>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if result.taalfouten %}
+<div class="holo-card">
+  <h2>Gemarkeerde taalfouten <span class="holo-hint" style="display:inline;">(geel gearceerd in het document, geen comment)</span></h2>
+  <table class="holo">
+    <thead><tr><th>Tekst</th><th>Type</th></tr></thead>
+    <tbody>
+      {% for t in result.taalfouten %}
+        <tr><td><span style="background:#FFF3B0;">{{ t.quote }}</span></td><td>{{ t.type }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 
 {% if result.unplaced %}
 <div class="holo-card">

@@ -42,7 +42,14 @@
     <div class="holo-hint" style="margin-top:14px;">De velden hieronder zijn <strong>kant-en-klaar ingevuld</strong>
       met een standaardset. Pas aan wat jullie opleiding anders wil — anders blijft de standaard gelden.</div>
 
-    <label>
+    <label style="margin-top:12px;">1. Extra inhoudelijke criteria (bovenop de rubriek — beoordeeld in samenhang met het hele document)</label>
+    <textarea name="inhoud_criteria" rows="7"
+      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;">{{ defaults.inhoud_criteria }}</textarea>
+    <div class="holo-hint">Bijv. of de resultatenhoofdstukken de deelvragen beantwoorden, of de praktijk goed
+      aan het recht wordt getoetst, en of irrelevante delen worden gesignaleerd. Het model heeft het hele
+      document in beeld, dus kruisverwijzingen (deelvragen ↔ resultaten) kosten niets extra.</div>
+
+    <label style="margin-top:12px;">
       <input type="checkbox" name="taal_enabled" value="1" checked> 2. Taalfouten (spelling/grammatica) — markeren
     </label>
     <textarea name="taal_instructies" rows="3"

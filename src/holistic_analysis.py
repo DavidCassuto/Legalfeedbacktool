@@ -52,7 +52,19 @@ _NL_TAALGEBRUIK = (
 )
 
 # ── Standaard feedback-configuratie (kant-en-klaar; school overschrijft naar wens) ──
-# Categorie 1 (inhoud per onderdeel) komt uit de Excel-rubriek.
+# Categorie 1 (inhoud per onderdeel) komt uit de Excel-rubriek + deze extra criteria.
+DEFAULT_INHOUD_CRITERIA = (
+    "Beoordeel elk onderdeel in samenhang met het HELE document; de deelvragen, methode e.d. "
+    "staan mogelijk in een ander hoofdstuk en mag je daarbij betrekken.\n"
+    "- Beantwoordt het hoofdstuk 'Juridisch onderzoek' de bijbehorende juridische deelvraag/deelvragen?\n"
+    "- Beantwoordt het hoofdstuk 'Praktijkonderzoek' de bijbehorende praktijk-deelvraag/deelvragen?\n"
+    "- Is er een evaluerende deelvraag? Wordt de praktijk goed getoetst aan het recht? "
+    "(Of, als een juridische situatie/ontwikkeling/wijziging wordt getoetst aan niet-juridische "
+    "criteria zoals doelmatigheid en efficiëntie: zijn er goede, MEETBARE criteria geformuleerd "
+    "en wordt het recht goed aan die criteria getoetst?)\n"
+    "- Signaleer onderdelen of hele resultatenhoofdstukken die NIET bijdragen aan de beantwoording "
+    "van de deelvragen, en leg uit waarom ze niet relevant zijn."
+)
 DEFAULT_TAAL_INSTRUCTIES = (
     "Let op spelling-, grammatica-, interpunctie- en duidelijke stijlfouten: d/t-fouten, "
     "werkwoordsvervoeging, congruentie (onderwerp-werkwoord), verkeerd of ontbrekend "
@@ -76,6 +88,7 @@ def _merge_config(cfg: dict | None) -> dict:
     """Vul een (deels lege) feedback-configuratie aan met de standaarden."""
     cfg = dict(cfg or {})
     return {
+        'inhoud_criteria':  (cfg.get('inhoud_criteria') or DEFAULT_INHOUD_CRITERIA).strip(),
         'taal_enabled':     cfg.get('taal_enabled', True),
         'taal_instructies': (cfg.get('taal_instructies') or DEFAULT_TAAL_INSTRUCTIES).strip(),
         'stijl_enabled':    cfg.get('stijl_enabled', True),
@@ -157,6 +170,12 @@ def _build_user_prompt(rubric_text: str, document_text: str,
        "comment": "<feedback op de schrijfkwaliteit>"{(',' + chr(10) + '       "suggestie": "<of leeg>"') if cfg['show_suggestions'] else ''} }}
   ],"""
 
+    cat1_extra = ""
+    if cfg.get('inhoud_criteria'):
+        cat1_extra = ("\nEXTRA INHOUDELIJKE CRITERIA (bovenop de rubriek, van de opleiding) — "
+                      "verwerk deze in de \"rubric_items\"-feedback bij het passende onderdeel:\n"
+                      f"{cfg['inhoud_criteria']}\n")
+
     cat2_instr = (f"\nCATEGORIE TAALFOUTEN (spelling/grammatica/stijl) — vul \"taalfouten\". "
                   f"Richtlijn van de opleiding: {cfg['taal_instructies']} "
                   f"Geef maximaal {cap} REPRESENTATIEVE voorbeelden (niet elke instantie); "
@@ -177,7 +196,7 @@ bronnen, ruwe data) zijn steunmateriaal — geef daar GEEN feedback op.
 
 Drie soorten feedback:
 1. INHOUD per rubric-onderdeel -> "rubric_items" (de inhoudelijke eisen uit de rubric).
-{cat2_instr}{cat3_instr}
+{cat1_extra}{cat2_instr}{cat3_instr}
 ZEER BELANGRIJK voor elke "quote": een letterlijk (verbatim) overgenomen stuk tekst uit het
 document, exact zoals het er staat (zelfde woorden, leestekens, hoofdletters). Kopieer het,
 verzin of parafraseer NIET. Houd het kort (één zin of deelzin). {sugg_rule}

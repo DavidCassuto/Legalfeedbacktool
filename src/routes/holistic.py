@@ -136,6 +136,7 @@ def holistic_run():
         'taal_enabled':      taal_enabled,
         'stijl_enabled':     stijl_enabled,
         'show_suggestions':  show_suggestions,
+        'inhoud_criteria':   saved_cfg.get('inhoud_criteria', ''),
         'taal_instructies':  saved_cfg.get('taal_instructies', ''),
         'stijl_instructies': saved_cfg.get('stijl_instructies', ''),
         'toon':              saved_cfg.get('toon', ''),
@@ -236,6 +237,7 @@ def holistic_rubrics():
     """Beheerpagina: opgeslagen rubrics tonen + nieuwe toevoegen."""
     return render_template('holistic_rubrics.html', saved_rubrics=_saved_rubrics(),
                            defaults={
+                               'inhoud_criteria':   holistic_analysis.DEFAULT_INHOUD_CRITERIA,
                                'taal_instructies':  holistic_analysis.DEFAULT_TAAL_INSTRUCTIES,
                                'stijl_instructies': holistic_analysis.DEFAULT_STIJL_INSTRUCTIES,
                                'toon':              holistic_analysis.DEFAULT_TOON,
@@ -247,6 +249,7 @@ def holistic_rubric_add():
     """Upload een Excel-formulier en bewaar het als herbruikbare rubric."""
     name = (request.form.get('name') or '').strip()
     feedback_config = {
+        'inhoud_criteria':   (request.form.get('inhoud_criteria') or '').strip(),
         'taal_enabled':      bool(request.form.get('taal_enabled')),
         'taal_instructies':  (request.form.get('taal_instructies') or '').strip(),
         'stijl_enabled':     bool(request.form.get('stijl_enabled')),

@@ -286,6 +286,39 @@ def holistic_rubric_add():
 
 
 @login_required
+def holistic_rubric_edit(rubric_id):
+    """Toon een opgeslagen rubric: herkende tekst per tabblad + bewerkbare feedback-config."""
+    rec = rubric_library.get_rubric(current_app.config['UPLOAD_FOLDER'], rubric_id)
+    if not rec:
+        flash('Rubric niet gevonden.', 'danger')
+        return redirect(url_for('holistic_rubrics'))
+    cfg = holistic_analysis._merge_config(rec.get('feedback_config'))
+    return render_template('holistic_rubric_edit.html', rec=rec, cfg=cfg)
+
+
+@login_required
+def holistic_rubric_update(rubric_id):
+    """Sla bewerkte naam + feedback-config op."""
+    feedback_config = {
+        'inhoud_criteria':   (request.form.get('inhoud_criteria') or '').strip(),
+        'taal_enabled':      bool(request.form.get('taal_enabled')),
+        'taal_instructies':  (request.form.get('taal_instructies') or '').strip(),
+        'stijl_enabled':     bool(request.form.get('stijl_enabled')),
+        'stijl_instructies': (request.form.get('stijl_instructies') or '').strip(),
+        'toon':              (request.form.get('toon') or '').strip(),
+        'show_suggestions':  bool(request.form.get('show_suggestions')),
+    }
+    rec = rubric_library.update_rubric(
+        current_app.config['UPLOAD_FOLDER'], rubric_id,
+        name=request.form.get('name'), feedback_config=feedback_config)
+    if rec:
+        flash(f"Rubric '{rec['name']}' bijgewerkt.", 'success')
+    else:
+        flash('Rubric niet gevonden.', 'danger')
+    return redirect(url_for('holistic_rubrics'))
+
+
+@login_required
 def holistic_rubric_delete(rubric_id):
     """Verwijder een opgeslagen rubric."""
     if rubric_library.delete_rubric(current_app.config['UPLOAD_FOLDER'], rubric_id):

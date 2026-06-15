@@ -85,6 +85,22 @@ def get_rubric(upload_folder: str, rubric_id: str) -> dict | None:
         return json.load(f)
 
 
+def update_rubric(upload_folder: str, rubric_id: str,
+                  name: str | None = None, feedback_config: dict | None = None) -> dict | None:
+    """Werk naam en/of feedback-config van een opgeslagen rubric bij (tabs blijven)."""
+    rec = get_rubric(upload_folder, rubric_id)
+    if not rec:
+        return None
+    if name is not None and name.strip():
+        rec['name'] = name.strip()
+    if feedback_config is not None:
+        rec['feedback_config'] = feedback_config
+    path = os.path.join(_library_dir(upload_folder), f"{rec['id']}.json")
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(rec, f, ensure_ascii=False)
+    return rec
+
+
 def delete_rubric(upload_folder: str, rubric_id: str) -> bool:
     rid = _safe_id(rubric_id)
     if not rid:

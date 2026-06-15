@@ -145,7 +145,8 @@ from routes.onboarding import (
 from routes.misc import performance_stats
 from routes.holistic import (
     holistic_form, holistic_run, holistic_analyze, holistic_download,
-    holistic_rubrics, holistic_rubric_add, holistic_rubric_delete,
+    holistic_rubrics, holistic_rubric_add, holistic_rubric_edit,
+    holistic_rubric_update, holistic_rubric_delete,
 )
 
 # ── URL-registraties (endpoint-naam = functienaam → url_for() werkt ongewijzigd) ─
@@ -232,6 +233,8 @@ R('/holistic/analyze',           'holistic_analyze',  holistic_analyze,  methods
 R('/holistic/download/<naam>',   'holistic_download', holistic_download)
 R('/holistic/rubrics',                  'holistic_rubrics',       holistic_rubrics)
 R('/holistic/rubrics/add',              'holistic_rubric_add',    holistic_rubric_add,    methods=['POST'])
+R('/holistic/rubrics/<rubric_id>/edit',   'holistic_rubric_edit',   holistic_rubric_edit)
+R('/holistic/rubrics/<rubric_id>/update', 'holistic_rubric_update', holistic_rubric_update, methods=['POST'])
 R('/holistic/rubrics/<rubric_id>/delete', 'holistic_rubric_delete', holistic_rubric_delete, methods=['POST'])
 
 # ── Start ─────────────────────────────────────────────────────────────────────

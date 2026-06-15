@@ -82,7 +82,7 @@
       <tbody>
         {% for r in saved_rubrics %}
           <tr>
-            <td><strong>{{ r.name }}</strong></td>
+            <td><a href="{{ url_for('holistic_rubric_edit', rubric_id=r.id) }}"><strong>{{ r.name }}</strong></a></td>
             <td>{% for t in r.tab_names %}<span class="tag">{{ t }}</span>{% endfor %}</td>
             <td>{% if r.has_config %}✅ ingesteld{% else %}standaard{% endif %}</td>
             <td>{{ r.created_at[:10] }}</td>

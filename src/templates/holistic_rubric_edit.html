@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Rubric bewerken - DocuCheck{% endblock %}
+
+{% block content %}
+<style>
+  .holo-card { background:#fff; border-radius:14px; padding:24px; margin-bottom:24px;
+               box-shadow:0 4px 15px rgba(77,144,142,0.12); }
+  .holo-card h2 { color:#4D908E; margin-bottom:14px; }
+  .holo-form label { display:block; font-weight:600; margin:14px 0 6px; color:#2B2D42; }
+  .holo-form input[type=text], .holo-form textarea {
+      width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px;
+      font-family:inherit; font-size:0.93em; }
+  .holo-btn { margin-top:16px; background:linear-gradient(135deg,#4D908E,#52796F); color:#fff;
+              border:none; padding:11px 20px; border-radius:8px; font-size:1em; cursor:pointer; font-weight:600; }
+  .holo-hint { color:#6C757D; font-size:0.86em; margin-top:4px; }
+  .tab-pre { white-space:pre-wrap; background:#F8F9FA; border:1px solid #E9ECEF; border-radius:8px;
+             padding:10px 12px; font-size:0.86em; max-height:300px; overflow:auto; }
+  details summary { cursor:pointer; color:#52796F; font-weight:600; margin-top:6px; }
+</style>
+
+<div class="header" style="margin-bottom:20px;">
+  <h1>Rubric bewerken</h1>
+  <p><a href="{{ url_for('holistic_rubrics') }}" style="color:#fff; text-decoration:underline;">← Terug naar bibliotheek</a></p>
+</div>
+
+<div class="holo-card">
+  <h2>Herkende rubriek-tekst per beroepsproduct</h2>
+  <p class="holo-hint">Dit is wat uit de Excel-tabbladen is gehaald (categorie 1: inhoud per onderdeel). Alleen-lezen — ter controle.</p>
+  {% for naam, tekst in rec.tabs.items() %}
+    <details>
+      <summary>{{ naam }} ({{ tekst|length }} tekens)</summary>
+      <div class="tab-pre">{{ tekst }}</div>
+    </details>
+  {% endfor %}
+</div>
+
+<div class="holo-card">
+  <h2>Feedback-instellingen</h2>
+  <form class="holo-form" method="POST" action="{{ url_for('holistic_rubric_update', rubric_id=rec.id) }}">
+    <label for="name">Naam</label>
+    <input type="text" id="name" name="name" value="{{ rec.name }}">
+
+    <label>1. Extra inhoudelijke criteria (bovenop de rubriek — beoordeeld in samenhang met het hele document)</label>
+    <textarea name="inhoud_criteria" rows="8">{{ cfg.inhoud_criteria }}</textarea>
+
+    <label style="margin-top:12px;">
+      <input type="checkbox" name="taal_enabled" value="1" {% if cfg.taal_enabled %}checked{% endif %}>
+      2. Taalfouten (spelling/grammatica) — markeren
+    </label>
+    <textarea name="taal_instructies" rows="3">{{ cfg.taal_instructies }}</textarea>
+
+    <label style="margin-top:12px;">
+      <input type="checkbox" name="stijl_enabled" value="1" {% if cfg.stijl_enabled %}checked{% endif %}>
+      3. Juridische schrijfkwaliteit — als comment
+    </label>
+    <textarea name="stijl_instructies" rows="3">{{ cfg.stijl_instructies }}</textarea>
+
+    <label style="margin-top:12px;">4. Toon van de feedback</label>
+    <textarea name="toon" rows="3">{{ cfg.toon }}</textarea>
+
+    <label style="margin-top:12px; font-weight:500;">
+      <input type="checkbox" name="show_suggestions" value="1" {% if cfg.show_suggestions %}checked{% endif %}>
+      Suggesties tonen (oplossingsrichting meegeven)
+    </label>
+
+    <button class="holo-btn" type="submit">Wijzigingen opslaan</button>
+  </form>
+</div>
+{% endblock %}

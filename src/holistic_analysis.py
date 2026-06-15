@@ -220,22 +220,22 @@ PRICING = {
 }
 # Ruwe schatting: ~3.7 tekens per token voor Nederlands proza.
 CHARS_PER_TOKEN = 3.7
-# Typische omvang van het JSON-antwoord (rubric-oordeel + bevindingen).
-EST_OUTPUT_TOKENS = 4000
+# Typische omvang van het JSON-antwoord (drie feedback-groepen). Ruwe bovengrens
+# voor de kostenschatting; de werkelijke uitvoer is begrensd door max_tokens.
+EST_OUTPUT_TOKENS = 6000
 
 
 def _call_llm(system_prompt: str, cacheable_prefix: str, document_block: str,
-              model: str, max_tokens: int = 8000) -> dict:
+              model: str, max_tokens: int = 16000) -> dict:
     """
     Eén Anthropic-call met prompt-caching op het systeemprompt + rubric-deel.
-    Bij meerdere runs met dezelfde rubric (bv. een klas studenten) worden die
-    tokens uit de cache gelezen (~10% van de inputprijs) i.p.v. opnieuw betaald.
+    Streamt het antwoord (ruim output-budget) zodat de JSON niet halverwege afkapt.
     """
     import anthropic
     if not Config.ANTHROPIC_API_KEY:
         raise RuntimeError("ANTHROPIC_API_KEY niet ingesteld (.env).")
     client = anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
-    resp = client.messages.create(
+    kwargs = dict(
         model=model,
         max_tokens=max_tokens,
         system=[{'type': 'text', 'text': system_prompt,
@@ -243,21 +243,23 @@ def _call_llm(system_prompt: str, cacheable_prefix: str, document_block: str,
         messages=[{
             'role': 'user',
             'content': [
-                # Stabiel deel (instructies + rubric) -> gecached
                 {'type': 'text', 'text': cacheable_prefix,
                  'cache_control': {'type': 'ephemeral'}},
-                # Variabel deel (het document) -> niet gecached
                 {'type': 'text', 'text': document_block},
             ],
         }],
     )
-    u = resp.usage
+    with client.messages.stream(**kwargs) as stream:
+        msg = stream.get_final_message()
+    u = msg.usage
+    text = ''.join(b.text for b in msg.content if getattr(b, 'type', None) == 'text')
     return {
-        'text':          resp.content[0].text,
+        'text':          text,
         'input_tokens':  u.input_tokens,
         'output_tokens': u.output_tokens,
         'cache_read':    getattr(u, 'cache_read_input_tokens', 0) or 0,
         'cache_created': getattr(u, 'cache_creation_input_tokens', 0) or 0,
+        'stop_reason':   msg.stop_reason,
     }
 
 
@@ -300,21 +302,59 @@ def estimate_run(rubric_text: str, docx_path: str, product_type: str = '',
     }
 
 
+def _repair_truncated_json(s: str) -> str:
+    """Repareer afgekapte JSON: knip terug naar het laatste 'veilige' punt
+    (na een afgesloten waarde) en sluit open haakjes. Vangnet voor max_tokens-afkap."""
+    stack = []
+    in_str = False
+    esc = False
+    last_safe = 0
+    safe_stack: list = []   # open haakjes ZOALS op het veilige afkappunt
+    for i, ch in enumerate(s):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == '\\':
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in '{[':
+            stack.append('}' if ch == '{' else ']')
+            if len(stack) == 1:                 # minimaal een leeg root-object sluiten
+                last_safe, safe_stack = i + 1, list(stack)
+        elif ch in '}]':
+            if stack:
+                stack.pop()
+            last_safe, safe_stack = i + 1, list(stack)   # net na een afgesloten container
+        elif ch == ',':
+            last_safe, safe_stack = i, list(stack)        # vóór de komma: na een complete waarde
+    out = s[:last_safe].rstrip().rstrip(',')
+    out += ''.join(reversed(safe_stack))
+    return out
+
+
 def _parse_json(text: str) -> dict:
-    """Haal het JSON-object uit de LLM-respons (tolerant voor markdown-fences)."""
+    """Haal het JSON-object uit de LLM-respons (tolerant voor fences en afkap)."""
     cleaned = text.strip()
-    # Strip ```json ... ``` fences indien aanwezig
     cleaned = re.sub(r'^```(?:json)?\s*', '', cleaned)
     cleaned = re.sub(r'\s*```$', '', cleaned)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
-        # Val terug op het grootste {...}-blok
-        start = cleaned.find('{')
-        end = cleaned.rfind('}')
-        if start != -1 and end != -1 and end > start:
+        pass
+    start = cleaned.find('{')
+    end = cleaned.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        try:
             return json.loads(cleaned[start:end + 1])
-        raise
+        except json.JSONDecodeError:
+            pass
+    # Laatste redmiddel: afgekapte JSON repareren
+    frag = cleaned[start:] if start != -1 else cleaned
+    return json.loads(_repair_truncated_json(frag))
 
 
 # Kopteksten die het begin van de bijlagen/annexen markeren. De analyse stopt hier
@@ -567,9 +607,12 @@ def run_holistic_analysis(
     cacheable_prefix, document_block = _build_user_prompt(
         rubric_text, analyze_text, detect_product_type, cfg)
     llm = _call_llm(system_prompt, cacheable_prefix, document_block, model)
-    logger.info("LLM klaar | in=%d out=%d cache_read=%d cache_created=%d",
+    logger.info("LLM klaar | in=%d out=%d cache_read=%d cache_created=%d stop=%s",
                 llm['input_tokens'], llm['output_tokens'],
-                llm.get('cache_read', 0), llm.get('cache_created', 0))
+                llm.get('cache_read', 0), llm.get('cache_created', 0),
+                llm.get('stop_reason'))
+    if llm.get('stop_reason') == 'max_tokens':
+        logger.warning("Antwoord afgekapt op max_tokens — JSON wordt indien nodig gerepareerd.")
 
     data = _parse_json(llm['text'])
     rubric_items = data.get('rubric_items', []) or []

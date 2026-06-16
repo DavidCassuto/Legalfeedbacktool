@@ -198,7 +198,10 @@ def _build_user_prompt(rubric_text: str, document_text: str,
     cat1_extra = ""
     if cfg.get('inhoud_criteria'):
         cat1_extra = ("\nEXTRA INHOUDELIJKE CRITERIA (bovenop de rubriek, van de opleiding) — "
-                      "verwerk deze in de \"rubric_items\"-feedback bij het passende onderdeel:\n"
+                      "verwerk deze in de \"feedback\" van het passende onderdeel. Beoordeel "
+                      "hierbij EXPLICIET of elk (resultaten)hoofdstuk zijn deelvraag beantwoordt, "
+                      "en vul \"anchor\" met een verbatim zin uit dat onderdeel (bv. de deelvraag "
+                      "of de tussenconclusie) zodat die feedback ook in het document verschijnt:\n"
                       f"{cfg['inhoud_criteria']}\n")
 
     cat2_instr = (f"\nCATEGORIE TAALFOUTEN (spelling/grammatica/stijl) — vul \"taalfouten\". "
@@ -238,7 +241,8 @@ Geef je antwoord UITSLUITEND als geldige JSON, zonder extra tekst eromheen, in d
 {pt_field}  "rubric_items": [
     {{
       "naam": "<naam van het rubric-onderdeel, bv. Methode>",
-      "feedback": "<formatieve samenvatting: wat is sterk en wat kan beter — GEEN cijfer>",
+      "feedback": "<formatieve samenvatting: wat is sterk en wat kan beter — GEEN cijfer; beantwoordt het hoofdstuk zijn deelvraag?>",
+      "anchor": "<verbatim zin uit dit onderdeel om de samenvatting bij te plaatsen (deelvraag of tussenconclusie), of leeg>",
       "findings": [
         {{
           "quote": "<verbatim passage>",
@@ -702,6 +706,13 @@ def run_holistic_analysis(
         naam = (item.get('naam') or 'Onderdeel').strip()
         for f in item.get('findings', []) or []:
             _add_comment(naam, f, 'holistic')
+        # Per-onderdeel samenvatting (incl. deelvraag-oordeel) als comment bij een
+        # citaat uit dat onderdeel — zodat het holistische oordeel ook in het doc staat.
+        fb = (item.get('feedback') or '').strip()
+        anchor = (item.get('anchor') or '').strip()
+        if fb and anchor:
+            _add_comment(naam, {'quote': anchor, 'comment': fb,
+                                'severity': 'tip', 'suggestie': ''}, 'holistic')
     # Categorie 3: juridische schrijfkwaliteit -> comments
     for f in schrijfkwaliteit:
         _add_comment('Schrijfkwaliteit', f, 'holistic')

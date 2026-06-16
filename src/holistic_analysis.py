@@ -175,7 +175,9 @@ def _build_user_prompt(rubric_text: str, document_text: str,
     if cfg['taal_enabled']:
         taal_block = f"""
   "taalfouten": [
-    {{ "quote": "<verbatim foutieve tekst>", "type": "<spelling|grammatica|interpunctie|stijl>" }}
+    {{ "quote": "<verbatim passage met genoeg context om de plek te vinden>",
+       "fout": "<ALLEEN het foutieve woord, of de twee woorden waartussen het misgaat (bv. bij een ontbrekende komma); exact verbatim, binnen de quote>",
+       "type": "<spelling|grammatica|interpunctie|stijl>" }}
   ],"""
     # Categorie 3 — juridische schrijfkwaliteit (worden COMMENTS)
     stijl_block = ""
@@ -201,6 +203,8 @@ def _build_user_prompt(rubric_text: str, document_text: str,
 
     cat2_instr = (f"\nCATEGORIE TAALFOUTEN (spelling/grammatica/stijl) — vul \"taalfouten\". "
                   f"Richtlijn van de opleiding: {cfg['taal_instructies']} "
+                  f"Zet in \"fout\" UITSLUITEND het foutieve woord (of de twee woorden waartussen "
+                  f"het misgaat), niet de hele zin — dat is wat gemarkeerd wordt. "
                   f"Geef maximaal {cap} REPRESENTATIEVE voorbeelden (niet elke instantie); "
                   f"noem terugkerende fouttypes één keer.\n" if cfg['taal_enabled'] else "")
     cat3_instr = (f"\nCATEGORIE JURIDISCHE SCHRIJFKWALITEIT — vul \"schrijfkwaliteit\". "
@@ -705,9 +709,11 @@ def run_holistic_analysis(
     for f in ai_stijl:
         _add_comment('Schrijfstijl (AI-signaal)', f, 'holistic')
 
-    # Categorie 2: taalfouten -> lichte MARKERING (geen comment)
-    taal_snippets = [(t.get('quote') or '').strip() for t in taalfouten
-                     if (t.get('quote') or '').strip()]
+    # Categorie 2: taalfouten -> lichte MARKERING (geen comment).
+    # quote = context om de plek te vinden; fout = exact het te markeren stukje.
+    taal_items = [{'offending_snippet': (t.get('quote') or '').strip(),
+                   'fout': (t.get('fout') or '').strip()}
+                  for t in taalfouten if (t.get('quote') or t.get('fout') or '').strip()]
 
     placed_count = sum(1 for fi in comment_items if fi['_locatable'])
 
@@ -717,7 +723,7 @@ def run_holistic_analysis(
         output_path = f"{base}_holistisch_gecommentarieerd{ext}"
 
     comments_tmp = output_path
-    if taal_snippets:
+    if taal_items:
         base, ext = os.path.splitext(output_path)
         comments_tmp = f"{base}__c{ext}"
 
@@ -729,9 +735,9 @@ def run_holistic_analysis(
     )
 
     highlights_placed = 0
-    if taal_snippets:
+    if taal_items:
         _, highlights_placed = add_highlights(
-            comments_tmp, taal_snippets, output_path, color='yellow')
+            comments_tmp, taal_items, output_path, color='yellow')
         try:
             if os.path.abspath(comments_tmp) != os.path.abspath(output_path):
                 os.remove(comments_tmp)

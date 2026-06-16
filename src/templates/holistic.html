@@ -229,10 +229,14 @@
 <div class="holo-card">
   <h2>Gemarkeerde taalfouten <span class="holo-hint" style="display:inline;">(geel gearceerd in het document, geen comment)</span></h2>
   <table class="holo">
-    <thead><tr><th>Tekst</th><th>Type</th></tr></thead>
+    <thead><tr><th>Gemarkeerd</th><th>In context</th><th>Type</th></tr></thead>
     <tbody>
       {% for t in result.taalfouten %}
-        <tr><td><span style="background:#FFF3B0;">{{ t.quote }}</span></td><td>{{ t.type }}</td></tr>
+        <tr>
+          <td><span style="background:#FFF3B0;">{{ t.fout or t.quote }}</span></td>
+          <td class="holo-hint">{{ t.quote }}</td>
+          <td>{{ t.type }}</td>
+        </tr>
       {% endfor %}
     </tbody>
   </table>

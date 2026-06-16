@@ -415,9 +415,11 @@ def _run_with_text(src_run, text: str, mark: bool, color: Optional[str], underli
     return new
 
 
-def _highlight_snippet_in_para(p_el, snippet: str, color: Optional[str], underline: bool) -> bool:
+def _highlight_snippet_in_para(p_el, snippet: str, color: Optional[str], underline: bool,
+                               mark_text: str = '') -> bool:
     """Markeer (arcering/onderstreping) de runs die `snippet` bevatten; splitst
-    runs zodat alleen de exacte tekst gemarkeerd wordt."""
+    runs zodat alleen de exacte tekst gemarkeerd wordt. Als `mark_text` is opgegeven
+    en binnen de gevonden passage voorkomt, wordt ALLEEN dat deel gemarkeerd."""
     runs = p_el.findall(f'{{{W_NS}}}r')
     infos = []
     full = ''
@@ -442,6 +444,15 @@ def _highlight_snippet_in_para(p_el, snippet: str, color: Optional[str], underli
         if not m:
             return False
     s, e = m.start(), m.end()
+
+    # Versmal tot ALLEEN het foutieve stukje, als dat binnen de passage te vinden is.
+    if mark_text and mark_text.strip():
+        mpat = _flex(mark_text.strip())
+        mm = mpat.search(full, s, e) if mpat else None
+        if mm is None and mpat is not None:      # ook net buiten de quote-grens toestaan
+            mm = mpat.search(full)
+        if mm is not None:
+            s, e = mm.start(), mm.end()
 
     for (r, t_el, txt, rs, re_) in infos:
         if t_el is None or not txt or re_ <= s or rs >= e:
@@ -478,12 +489,17 @@ def add_highlights(
     ZONDER comments. `highlight_items` is een lijst van snippets (str) of dicts
     met 'offending_snippet'. Returns (output_path, aantal_gemarkeerd).
     """
-    snippets = []
+    snippets = []   # (locate_text, mark_text)
     for it in highlight_items:
-        s = it if isinstance(it, str) else (it.get('offending_snippet') or '')
-        s = (s or '').strip()
-        if len(s) >= 4:
-            snippets.append(s)
+        if isinstance(it, str):
+            loc, mark = it, ''
+        else:
+            loc = it.get('offending_snippet') or it.get('quote') or ''
+            mark = it.get('fout') or it.get('mark') or ''
+        loc, mark = (loc or '').strip(), (mark or '').strip()
+        # quote mag kort zijn als er een fout-deel is; anders min. 4 tekens om te plaatsen
+        if len(loc) >= 4 or len(mark) >= 3:
+            snippets.append((loc or mark, mark))
 
     if not snippets:
         if os.path.abspath(output_path) != os.path.abspath(original_docx_path):
@@ -499,7 +515,7 @@ def add_highlights(
     paras = body.findall(f'{{{W_NS}}}p') if body is not None else []
 
     placed = 0
-    for snip in snippets:
+    for snip, mark in snippets:
         norm = re.sub(r'\s+', ' ', snip.lower().strip())
         for p in paras:
             ptext = ''.join(t.text or '' for t in p.findall(f'.//{{{W_NS}}}t'))
@@ -507,7 +523,7 @@ def add_highlights(
                 continue
             np = re.sub(r'\s+', ' ', ptext.lower())
             if norm in np or (len(norm) >= 15 and norm[:60] in np):
-                if _highlight_snippet_in_para(p, snip, color, underline):
+                if _highlight_snippet_in_para(p, snip, color, underline, mark_text=mark):
                     placed += 1
                 break
 

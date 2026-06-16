@@ -26,25 +26,58 @@ _DRAWING_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationsh
 
 
 def _drawing_text(xml_bytes: bytes) -> str:
-    """Haal leesbare tekst uit een drawingN.xml: regel per a:p-paragraaf,
-    lege regel tussen tekstvakken (shapes)."""
+    """Haal leesbare tekst uit een drawingN.xml in LEESVOLGORDE: tekstvakken
+    worden gesorteerd op hun positie op het blad (rij, dan kolom), zodat de
+    rubriek-tekst coherent is i.p.v. in willekeurige XML-volgorde."""
+    XDR = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
+    A = _NS['a']
     root = ET.fromstring(xml_bytes)
-    shapes_out = []
-    # Itereer over alle shapes met tekst (xdr:sp); val terug op hele boom als nodig
-    for sp in root.iter():
-        tag = sp.tag.split('}')[-1]
-        if tag != 'txBody':
-            continue
+
+    def _anchor_pos(anc):
+        frm = anc.find(f'{{{XDR}}}from')
+        if frm is not None:
+            r = frm.find(f'{{{XDR}}}row')
+            c = frm.find(f'{{{XDR}}}col')
+            row = int(r.text) if (r is not None and r.text) else None
+            col = int(c.text) if (c is not None and c.text) else None
+            if row is not None:
+                return (row, col if col is not None else 0)
+        pos = anc.find(f'{{{XDR}}}pos')   # absoluteAnchor (EMU)
+        if pos is not None:
+            return (int(pos.get('y', '0')) // 9525, int(pos.get('x', '0')) // 9525)
+        return (10 ** 9, 0)
+
+    def _anchor_text(anc):
         paras = []
-        for p in sp.findall('a:p', _NS):
-            runs = [t.text or '' for t in p.findall('.//a:t', _NS)]
-            line = ''.join(runs).strip()
-            if line:
-                paras.append(line)
-        block = '\n'.join(paras).strip()
-        if block:
-            shapes_out.append(block)
-    return '\n\n'.join(shapes_out).strip()
+        for tb in anc.iter():
+            if tb.tag.split('}')[-1] != 'txBody':
+                continue
+            for p in tb.findall(f'{{{A}}}p'):
+                runs = [t.text or '' for t in p.findall(f'.//{{{A}}}t')]
+                line = ''.join(runs).strip()
+                if line:
+                    paras.append(line)
+        return '\n'.join(paras).strip()
+
+    blocks = []
+    for order, anc in enumerate(list(root)):
+        if anc.tag.split('}')[-1] not in ('twoCellAnchor', 'oneCellAnchor', 'absoluteAnchor'):
+            continue
+        txt = _anchor_text(anc)
+        if txt:
+            blocks.append((_anchor_pos(anc) + (order,), txt))
+
+    if not blocks:   # vangnet: oude methode als er geen anchors zijn
+        for sp in root.iter():
+            if sp.tag.split('}')[-1] == 'txBody':
+                paras = [''.join(t.text or '' for t in p.findall(f'.//{{{A}}}t')).strip()
+                         for p in sp.findall(f'{{{A}}}p')]
+                blk = '\n'.join(x for x in paras if x).strip()
+                if blk:
+                    blocks.append(((10 ** 9, 0, 0), blk))
+
+    blocks.sort(key=lambda b: b[0])
+    return '\n\n'.join(b for _, b in blocks).strip()
 
 
 def extract_rubric_tabs(xlsx_path: str) -> dict[str, str]:

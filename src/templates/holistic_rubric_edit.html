@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Rubric bewerken - DocuCheck{% endblock %}
+{% block title %}{{ rec.name }} — bewerken - DocuCheck{% endblock %}
 
 {% block content %}
 <style>
@@ -20,8 +20,9 @@
 </style>
 
 <div class="header" style="margin-bottom:20px;">
-  <h1>Rubric bewerken</h1>
-  <p><a href="{{ url_for('holistic_rubrics') }}" style="color:#fff; text-decoration:underline;">← Terug naar bibliotheek</a></p>
+  <h1>✏️ {{ rec.name }}</h1>
+  <p style="opacity:0.9;">Rubric bewerken &middot;
+    <a href="{{ url_for('holistic_rubrics') }}" style="color:#FFD700; text-decoration:underline;">← Terug naar bibliotheek</a></p>
 </div>
 
 <div class="holo-card">

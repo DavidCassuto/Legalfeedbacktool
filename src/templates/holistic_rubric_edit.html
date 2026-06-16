@@ -57,6 +57,12 @@
     </label>
     <textarea name="stijl_instructies" rows="3">{{ cfg.stijl_instructies }}</textarea>
 
+    <label style="margin-top:12px;">
+      <input type="checkbox" name="ai_enabled" value="1" {% if cfg.ai_enabled %}checked{% endif %}>
+      5. AI-stijldetectie — als comment
+    </label>
+    <textarea name="ai_instructies" rows="5">{{ cfg.ai_instructies }}</textarea>
+
     <label style="margin-top:12px;">4. Toon van de feedback</label>
     <textarea name="toon" rows="3">{{ cfg.toon }}</textarea>
 
@@ -64,6 +70,11 @@
       <input type="checkbox" name="show_suggestions" value="1" {% if cfg.show_suggestions %}checked{% endif %}>
       Suggesties tonen (oplossingsrichting meegeven)
     </label>
+
+    <label style="margin-top:12px;">Max. voorbeelden per document-brede categorie (taal / schrijfkwaliteit / AI)</label>
+    <input type="number" name="max_per_categorie" min="1" max="50" value="{{ cfg.max_per_categorie }}"
+      style="width:120px; padding:8px; border:1px solid #CED4DA; border-radius:8px;">
+    <div class="holo-hint">Hoger = grondiger maar meer tokens/kosten.</div>
 
     <button class="holo-btn" type="submit">Wijzigingen opslaan</button>
   </form>

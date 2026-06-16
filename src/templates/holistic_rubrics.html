@@ -61,6 +61,12 @@
     <textarea name="stijl_instructies" rows="3"
       style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;">{{ defaults.stijl_instructies }}</textarea>
 
+    <label style="margin-top:12px;">
+      <input type="checkbox" name="ai_enabled" value="1" checked> 5. AI-stijldetectie — als comment
+    </label>
+    <textarea name="ai_instructies" rows="5"
+      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;">{{ defaults.ai_instructies }}</textarea>
+
     <label style="margin-top:12px;">4. Toon van de feedback</label>
     <textarea name="toon" rows="3"
       style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;">{{ defaults.toon }}</textarea>
@@ -68,7 +74,12 @@
     <label style="margin-top:12px; font-weight:500;">
       <input type="checkbox" name="show_suggestions" value="1" checked> Suggesties tonen (oplossingsrichting meegeven)
     </label>
-    <div class="holo-hint">Inhoudelijke eisen per onderdeel (categorie 1) komen uit de tabbladen van het Excel-bestand zelf.</div>
+
+    <label style="margin-top:12px;">Max. voorbeelden per document-brede categorie (taal / schrijfkwaliteit / AI)</label>
+    <input type="number" name="max_per_categorie" min="1" max="50" value="{{ defaults.max_per_categorie }}"
+      style="width:120px; padding:8px; border:1px solid #CED4DA; border-radius:8px;">
+    <div class="holo-hint">Hoger = grondiger maar meer tokens/kosten. Inhoudelijke eisen per onderdeel (categorie 1)
+      komen uit de tabbladen van het Excel-bestand zelf.</div>
 
     <button class="holo-btn" type="submit" style="margin-top:14px;">Opslaan</button>
   </form>

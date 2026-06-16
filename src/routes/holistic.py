@@ -67,13 +67,14 @@ def holistic_run():
     include_annexes = bool(request.form.get('include_annexes'))
     taal_enabled = bool(request.form.get('taal_enabled'))
     stijl_enabled = bool(request.form.get('stijl_enabled'))
+    ai_enabled = bool(request.form.get('ai_enabled'))
     show_suggestions = bool(request.form.get('show_suggestions'))
 
     def _form_state():
         return {'rubric_text': rubric_text, 'product_type': product_type,
                 'include_annexes': include_annexes, 'saved_rubric_id': saved_rubric_id,
                 'taal_enabled': taal_enabled, 'stijl_enabled': stijl_enabled,
-                'show_suggestions': show_suggestions}
+                'ai_enabled': ai_enabled, 'show_suggestions': show_suggestions}
 
     def _back():
         return render_template('holistic.html', product_types=PRODUCT_TYPES,
@@ -135,11 +136,14 @@ def holistic_run():
     feedback_config = {
         'taal_enabled':      taal_enabled,
         'stijl_enabled':     stijl_enabled,
+        'ai_enabled':        ai_enabled,
         'show_suggestions':  show_suggestions,
         'inhoud_criteria':   saved_cfg.get('inhoud_criteria', ''),
         'taal_instructies':  saved_cfg.get('taal_instructies', ''),
         'stijl_instructies': saved_cfg.get('stijl_instructies', ''),
+        'ai_instructies':    saved_cfg.get('ai_instructies', ''),
         'toon':              saved_cfg.get('toon', ''),
+        'max_per_categorie': saved_cfg.get('max_per_categorie'),
     }
 
     # Kostenschatting (zonder API)
@@ -240,7 +244,9 @@ def holistic_rubrics():
                                'inhoud_criteria':   holistic_analysis.DEFAULT_INHOUD_CRITERIA,
                                'taal_instructies':  holistic_analysis.DEFAULT_TAAL_INSTRUCTIES,
                                'stijl_instructies': holistic_analysis.DEFAULT_STIJL_INSTRUCTIES,
+                               'ai_instructies':    holistic_analysis.DEFAULT_AI_INSTRUCTIES,
                                'toon':              holistic_analysis.DEFAULT_TOON,
+                               'max_per_categorie': holistic_analysis.DEFAULT_MAX_PER_CATEGORIE,
                            })
 
 
@@ -254,8 +260,11 @@ def holistic_rubric_add():
         'taal_instructies':  (request.form.get('taal_instructies') or '').strip(),
         'stijl_enabled':     bool(request.form.get('stijl_enabled')),
         'stijl_instructies': (request.form.get('stijl_instructies') or '').strip(),
+        'ai_enabled':        bool(request.form.get('ai_enabled')),
+        'ai_instructies':    (request.form.get('ai_instructies') or '').strip(),
         'toon':              (request.form.get('toon') or '').strip(),
         'show_suggestions':  bool(request.form.get('show_suggestions')),
+        'max_per_categorie': int(request.form.get('max_per_categorie') or 0) or None,
     }
     rubric_file = request.files.get('rubric_file')
     if not rubric_file or not rubric_file.filename:
@@ -305,8 +314,11 @@ def holistic_rubric_update(rubric_id):
         'taal_instructies':  (request.form.get('taal_instructies') or '').strip(),
         'stijl_enabled':     bool(request.form.get('stijl_enabled')),
         'stijl_instructies': (request.form.get('stijl_instructies') or '').strip(),
+        'ai_enabled':        bool(request.form.get('ai_enabled')),
+        'ai_instructies':    (request.form.get('ai_instructies') or '').strip(),
         'toon':              (request.form.get('toon') or '').strip(),
         'show_suggestions':  bool(request.form.get('show_suggestions')),
+        'max_per_categorie': int(request.form.get('max_per_categorie') or 0) or None,
     }
     rec = rubric_library.update_rubric(
         current_app.config['UPLOAD_FOLDER'], rubric_id,

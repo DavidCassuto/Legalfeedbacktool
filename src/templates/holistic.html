@@ -93,6 +93,10 @@
         Juridische schrijfkwaliteit <span class="holo-hint" style="display:inline;">(zinslengte, wolligheid, alinea's — als Word-comment)</span>
       </label>
       <label style="font-weight:500; display:block; margin-top:6px;">
+        <input type="checkbox" name="ai_enabled" value="1" {% if not form or form.ai_enabled %}checked{% endif %}>
+        AI-stijldetectie <span class="holo-hint" style="display:inline;">(patronen die op AI-tekst wijzen — als Word-comment)</span>
+      </label>
+      <label style="font-weight:500; display:block; margin-top:6px;">
         <input type="checkbox" name="show_suggestions" value="1" {% if not form or form.show_suggestions %}checked{% endif %}>
         Suggesties tonen <span class="holo-hint" style="display:inline;">(uit = alleen benoemen wat beter kan, de student zoekt zelf de oplossing)</span>
       </label>
@@ -204,6 +208,18 @@
     <div class="holo-item">
       <div class="holo-quote">“{{ f.quote }}” {% if f.severity %}<span class="sev-{{ f.severity }}">[{{ f.severity }}]</span>{% endif %}</div>
       <div>{{ f.comment }}{% if f.suggestie %} <em>Suggestie: {{ f.suggestie }}</em>{% endif %}</div>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if result.ai_stijl %}
+<div class="holo-card">
+  <h2>AI-stijldetectie <span class="holo-hint" style="display:inline;">(als comment in het document)</span></h2>
+  {% for f in result.ai_stijl %}
+    <div class="holo-item">
+      <div class="holo-quote">“{{ f.quote }}”</div>
+      <div>{{ f.comment }}</div>
     </div>
   {% endfor %}
 </div>

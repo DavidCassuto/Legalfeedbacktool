@@ -79,9 +79,23 @@ DEFAULT_STIJL_INSTRUCTIES = (
 DEFAULT_TOON = (
     "Schrijf bemoedigend, respectvol en concreet, en spreek de student direct aan. "
     "Leg uit WAAROM iets beter kan, zodat de student het leert — schrijf de tekst niet "
-    "voor de student, maar wijs de weg naar een betere formulering."
+    "voor de student, maar wijs de weg naar een betere formulering. Gebruik begrijpelijke "
+    "taal voor de doelgroep; vermijd jargon in de feedback zelf."
 )
-DEFAULT_MAX_PER_CATEGORIE = 8
+DEFAULT_AI_INSTRUCTIES = (
+    "Signaleer schrijfstijl-patronen die de tekst zwak of onpersoonlijk maken en vaak op "
+    "AI-gegenereerde tekst wijzen. Beoordeel UITSLUITEND de stijl, niet de inhoud:\n"
+    "- Generieke openingszinnen zonder concrete inhoud ('In het huidige tijdperk...', 'Het is van cruciaal belang...').\n"
+    "- Symmetrische alineastructuur: elke alinea even lang, zelfde opbouw, geen variatie in toon.\n"
+    "- Hyperbolisch/wervend taalgebruik zonder onderbouwing ('cruciaal', 'essentieel', 'fundamenteel', 'baanbrekend').\n"
+    "- Ontbreken van academische voorzichtigheid: stellingen als absolute waarheid zonder 'lijkt', 'suggereert', 'mogelijk'.\n"
+    "- Tautologieën en redundante formuleringen.\n"
+    "- Overmatig formele verbindingswoorden ('tevens', 'voorts', 'derhalve', 'teneinde').\n"
+    "- Te gepolijst: geen enkele oneffenheid of persoonlijk perspectief.\n"
+    "- Verwijzingen naar bronnen die niet concreet worden aangehaald of toegepast.\n"
+    "NIET vlaggen: inhoudelijke tekortkomingen, grammatica/spelling, of stijlkeuzes die niet op AI wijzen."
+)
+DEFAULT_MAX_PER_CATEGORIE = 15
 
 
 def _merge_config(cfg: dict | None) -> dict:
@@ -93,6 +107,8 @@ def _merge_config(cfg: dict | None) -> dict:
         'taal_instructies': (cfg.get('taal_instructies') or DEFAULT_TAAL_INSTRUCTIES).strip(),
         'stijl_enabled':    cfg.get('stijl_enabled', True),
         'stijl_instructies': (cfg.get('stijl_instructies') or DEFAULT_STIJL_INSTRUCTIES).strip(),
+        'ai_enabled':       cfg.get('ai_enabled', True),
+        'ai_instructies':   (cfg.get('ai_instructies') or DEFAULT_AI_INSTRUCTIES).strip(),
         'toon':             (cfg.get('toon') or DEFAULT_TOON).strip(),
         'show_suggestions': cfg.get('show_suggestions', True),
         'max_per_categorie': int(cfg.get('max_per_categorie') or DEFAULT_MAX_PER_CATEGORIE),
@@ -169,6 +185,13 @@ def _build_user_prompt(rubric_text: str, document_text: str,
     {{ "quote": "<verbatim passage>", "severity": "<belangrijk|aandachtspunt|tip>",
        "comment": "<feedback op de schrijfkwaliteit>"{(',' + chr(10) + '       "suggestie": "<of leeg>"') if cfg['show_suggestions'] else ''} }}
   ],"""
+    # Categorie 5 — AI-stijldetectie (document-breed, worden COMMENTS)
+    ai_block = ""
+    if cfg['ai_enabled']:
+        ai_block = f"""
+  "ai_stijl": [
+    {{ "quote": "<verbatim passage>", "comment": "<welk AI-stijlpatroon en waarom dit de tekst zwakker maakt>" }}
+  ],"""
 
     cat1_extra = ""
     if cfg.get('inhoud_criteria'):
@@ -183,6 +206,9 @@ def _build_user_prompt(rubric_text: str, document_text: str,
     cat3_instr = (f"\nCATEGORIE JURIDISCHE SCHRIJFKWALITEIT — vul \"schrijfkwaliteit\". "
                   f"Richtlijn van de opleiding: {cfg['stijl_instructies']} "
                   f"Geef maximaal {cap} belangrijkste punten.\n" if cfg['stijl_enabled'] else "")
+    cat5_instr = (f"\nCATEGORIE AI-STIJLDETECTIE — vul \"ai_stijl\". "
+                  f"Richtlijn van de opleiding: {cfg['ai_instructies']} "
+                  f"Geef maximaal {cap} REPRESENTATIEVE voorbeelden.\n" if cfg['ai_enabled'] else "")
 
     cacheable_prefix = f"""{detect_instr}Hieronder staan eerst de BEOORDELINGSRUBRIC en daarna het volledige STUDENTDOCUMENT.
 
@@ -196,7 +222,7 @@ bronnen, ruwe data) zijn steunmateriaal — geef daar GEEN feedback op.
 
 Drie soorten feedback:
 1. INHOUD per rubric-onderdeel -> "rubric_items" (de inhoudelijke eisen uit de rubric).
-{cat1_extra}{cat2_instr}{cat3_instr}
+{cat1_extra}{cat2_instr}{cat3_instr}{cat5_instr}
 ZEER BELANGRIJK voor elke "quote": een letterlijk (verbatim) overgenomen stuk tekst uit het
 document, exact zoals het er staat (zelfde woorden, leestekens, hoofdletters). Kopieer het,
 verzin of parafraseer NIET. Houd het kort (één zin of deelzin). {sugg_rule}
@@ -217,7 +243,7 @@ Geef je antwoord UITSLUITEND als geldige JSON, zonder extra tekst eromheen, in d
 {sugg_field}        }}
       ]
     }}
-  ],{taal_block}{stijl_block}
+  ],{taal_block}{stijl_block}{ai_block}
   "eindbeeld": "<formatieve slotalinea: de belangrijkste punten om aan te werken>"
 }}
 
@@ -636,6 +662,7 @@ def run_holistic_analysis(
     data = _parse_json(llm['text'])
     rubric_items = data.get('rubric_items', []) or []
     schrijfkwaliteit = data.get('schrijfkwaliteit', []) or []
+    ai_stijl = data.get('ai_stijl', []) or []
     taalfouten = data.get('taalfouten', []) or []
     eindbeeld = data.get('eindbeeld', '') or ''
     detected_product_type = (data.get('product_type') or '').strip() or product_type
@@ -674,6 +701,9 @@ def run_holistic_analysis(
     # Categorie 3: juridische schrijfkwaliteit -> comments
     for f in schrijfkwaliteit:
         _add_comment('Schrijfkwaliteit', f, 'holistic')
+    # Categorie 5: AI-stijldetectie -> comments
+    for f in ai_stijl:
+        _add_comment('Schrijfstijl (AI-signaal)', f, 'holistic')
 
     # Categorie 2: taalfouten -> lichte MARKERING (geen comment)
     taal_snippets = [(t.get('quote') or '').strip() for t in taalfouten
@@ -714,6 +744,7 @@ def run_holistic_analysis(
     return {
         'rubric_items':     rubric_items,
         'schrijfkwaliteit': schrijfkwaliteit,
+        'ai_stijl':         ai_stijl,
         'taalfouten':       taalfouten,
         'eindbeeld':        eindbeeld,
         'product_type':     detected_product_type,

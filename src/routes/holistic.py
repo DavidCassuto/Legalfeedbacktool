@@ -139,6 +139,7 @@ def holistic_run():
         'ai_enabled':        ai_enabled,
         'show_suggestions':  show_suggestions,
         'inhoud_criteria':   saved_cfg.get('inhoud_criteria', ''),
+        'onderwijs_criteria': saved_cfg.get('onderwijs_criteria', ''),
         'taal_instructies':  saved_cfg.get('taal_instructies', ''),
         'stijl_instructies': saved_cfg.get('stijl_instructies', ''),
         'ai_instructies':    saved_cfg.get('ai_instructies', ''),
@@ -256,6 +257,7 @@ def holistic_rubric_add():
     name = (request.form.get('name') or '').strip()
     feedback_config = {
         'inhoud_criteria':   (request.form.get('inhoud_criteria') or '').strip(),
+        'onderwijs_criteria': (request.form.get('onderwijs_criteria') or '').strip(),
         'taal_enabled':      bool(request.form.get('taal_enabled')),
         'taal_instructies':  (request.form.get('taal_instructies') or '').strip(),
         'stijl_enabled':     bool(request.form.get('stijl_enabled')),
@@ -310,6 +312,7 @@ def holistic_rubric_update(rubric_id):
     """Sla bewerkte naam + feedback-config op."""
     feedback_config = {
         'inhoud_criteria':   (request.form.get('inhoud_criteria') or '').strip(),
+        'onderwijs_criteria': (request.form.get('onderwijs_criteria') or '').strip(),
         'taal_enabled':      bool(request.form.get('taal_enabled')),
         'taal_instructies':  (request.form.get('taal_instructies') or '').strip(),
         'stijl_enabled':     bool(request.form.get('stijl_enabled')),
@@ -328,6 +331,63 @@ def holistic_rubric_update(rubric_id):
     else:
         flash('Rubric niet gevonden.', 'danger')
     return redirect(url_for('holistic_rubrics'))
+
+
+@login_required
+def holistic_rubric_distill(rubric_id):
+    """Upload/plak onderwijsmateriaal -> AI distilleert inhoudelijke criteria ->
+    voeg toe aan het veld 'onderwijs_criteria' van deze rubric en sla op."""
+    rec = rubric_library.get_rubric(current_app.config['UPLOAD_FOLDER'], rubric_id)
+    if not rec:
+        flash('Rubric niet gevonden.', 'danger')
+        return redirect(url_for('holistic_rubrics'))
+
+    pasted = (request.form.get('material_text') or '').strip()
+    f = request.files.get('material_file')
+    material = ''
+    if f and f.filename:
+        if not f.filename.lower().endswith(('.docx', '.pptx', '.txt')):
+            flash('Onderwijsmateriaal moet .docx, .pptx of .txt zijn (of plak de tekst).', 'danger')
+            return redirect(url_for('holistic_rubric_edit', rubric_id=rubric_id))
+        tmp = os.path.join(_holistic_dir(),
+                           f"mat_{uuid.uuid4().hex[:8]}_{secure_filename(f.filename)}")
+        f.save(tmp)
+        try:
+            material = holistic_analysis.extract_material_text(tmp)
+        except Exception as e:
+            logger.error("Materiaal inlezen mislukt: %s", e)
+            flash(f'Kon het materiaal niet inlezen: {e}', 'danger')
+            return redirect(url_for('holistic_rubric_edit', rubric_id=rubric_id))
+        finally:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    if pasted:
+        material = (material + '\n\n' + pasted).strip() if material else pasted
+
+    if not material.strip():
+        flash('Geen materiaal ontvangen (upload een bestand of plak tekst).', 'danger')
+        return redirect(url_for('holistic_rubric_edit', rubric_id=rubric_id))
+
+    try:
+        distilled = holistic_analysis.distill_onderwijs_criteria(material)
+    except Exception as e:
+        logger.error("Distilleren mislukt: %s", e)
+        traceback.print_exc()
+        flash(f'Distilleren mislukt: {e}', 'danger')
+        return redirect(url_for('holistic_rubric_edit', rubric_id=rubric_id))
+
+    if not distilled:
+        flash('Geen inhoudelijke criteria uit het materiaal gehaald.', 'warning')
+        return redirect(url_for('holistic_rubric_edit', rubric_id=rubric_id))
+
+    cfg = rec.get('feedback_config') or {}
+    existing = (cfg.get('onderwijs_criteria') or '').strip()
+    cfg['onderwijs_criteria'] = (existing + '\n' + distilled).strip() if existing else distilled
+    rubric_library.update_rubric(current_app.config['UPLOAD_FOLDER'], rubric_id, feedback_config=cfg)
+    flash('Inhoudelijke criteria uit het onderwijsmateriaal toegevoegd — controleer en sla op.', 'success')
+    return redirect(url_for('holistic_rubric_edit', rubric_id=rubric_id))
 
 
 @login_required

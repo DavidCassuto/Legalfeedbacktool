@@ -107,6 +107,7 @@ def _merge_config(cfg: dict | None) -> dict:
         'inhoud_criteria':  (cfg.get('inhoud_criteria') or DEFAULT_INHOUD_CRITERIA).strip(),
         'taal_enabled':     cfg.get('taal_enabled', True),
         'taal_instructies': (cfg.get('taal_instructies') or DEFAULT_TAAL_INSTRUCTIES).strip(),
+        'onderwijs_criteria': (cfg.get('onderwijs_criteria') or '').strip(),
         'stijl_enabled':    cfg.get('stijl_enabled', True),
         'stijl_instructies': (cfg.get('stijl_instructies') or DEFAULT_STIJL_INSTRUCTIES).strip(),
         'ai_enabled':       cfg.get('ai_enabled', True),
@@ -209,6 +210,10 @@ def _build_user_prompt(rubric_text: str, document_text: str,
                       "ontbrekende methodologie hoort thuis in het methode-hoofdstuk, niet bij een "
                       "tussenconclusie), kies dan een \"quote\" uit DAT hoofdstuk.\n"
                       f"{cfg['inhoud_criteria']}\n")
+    if cfg.get('onderwijs_criteria'):
+        cat1_extra += ("\nAANVULLENDE INHOUDELIJKE CRITERIA uit het onderwijsmateriaal van de "
+                       "opleiding (studiehandleiding/sheets) — pas deze ook toe:\n"
+                       f"{cfg['onderwijs_criteria']}\n")
 
     cat2_instr = (f"\nCATEGORIE TAALFOUTEN (spelling/grammatica/stijl) — vul \"taalfouten\". "
                   f"Richtlijn van de opleiding: {cfg['taal_instructies']} "
@@ -369,6 +374,55 @@ def estimate_run(rubric_text: str, docx_path: str, product_type: str = '',
         'annex_info':       annex_info,
         'rubric_chars':     len(rubric_text),
     }
+
+
+def extract_material_text(path: str) -> str:
+    """Haal platte tekst uit onderwijsmateriaal: .docx, .pptx, .txt."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext in ('.docx', '.txt'):
+        full, _paras, _h = document_parsing.parse_document(path)
+        return full
+    if ext == '.pptx':
+        import zipfile
+        from html import unescape
+        out = []
+        with zipfile.ZipFile(path) as z:
+            slides = [n for n in z.namelist() if re.match(r'ppt/slides/slide\d+\.xml$', n)]
+            slides.sort(key=lambda n: int(re.search(r'slide(\d+)', n).group(1)))
+            for n in slides:
+                xml = z.read(n).decode('utf-8', 'replace')
+                ts = re.findall(r'<a:t>(.*?)</a:t>', xml, re.S)
+                if ts:
+                    out.append(' '.join(ts))
+        return unescape('\n\n'.join(out))
+    return ''
+
+
+def distill_onderwijs_criteria(material_text: str, model: str = None) -> str:
+    """Eén AI-call: distilleer uit onderwijsmateriaal ALLEEN de criteria die relevant
+    zijn voor de INHOUDELIJKE beoordeling, als beknopte bullet-lijst."""
+    model = model or DEFAULT_MODEL
+    material_text = (material_text or '').strip()
+    if not material_text:
+        return ''
+    material_text = material_text[:60000]   # begrens kosten
+    if not Config.ANTHROPIC_API_KEY:
+        raise RuntimeError("ANTHROPIC_API_KEY niet ingesteld (.env).")
+    system = ("Je bent een onderwijskundige die uit lesmateriaal de criteria haalt voor de "
+              "INHOUDELIJKE beoordeling van een (juridische) afstudeerscriptie. " + _NL_TAALGEBRUIK)
+    user = ("Hieronder staat onderwijsmateriaal (studiehandleiding en/of sheets). Haal ALLEEN de "
+            "punten eruit die relevant zijn voor de INHOUDELIJKE beoordeling van het werk: eisen aan "
+            "inhoud, structuur, vraagstelling, methode, onderbouwing, samenhang enz. "
+            "NEGEER logistiek, deadlines, opmaak-/inlevereisen, administratie en cijfersystematiek. "
+            "Geef een beknopte, concrete lijst met bullets ('- ...') die direct als feedbackcriteria "
+            "bruikbaar zijn. Verzin niets; baseer je uitsluitend op het materiaal.\n\n"
+            "=== ONDERWIJSMATERIAAL ===\n" + material_text)
+    import anthropic
+    client = anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
+    with client.messages.stream(model=model, max_tokens=2000, system=system,
+                                messages=[{'role': 'user', 'content': user}]) as stream:
+        msg = stream.get_final_message()
+    return ''.join(b.text for b in msg.content if getattr(b, 'type', None) == 'text').strip()
 
 
 def _repair_truncated_json(s: str) -> str:

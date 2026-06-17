@@ -11,3 +11,4 @@ click==8.2.1
 blinker==1.9.0
 gunicorn==22.0.0
 watchdog==4.0.0
+pypdf

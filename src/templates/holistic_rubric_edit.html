@@ -43,8 +43,8 @@
     veld <strong>1b</strong> hieronder — daar kun je ze daarna nog bewerken en opslaan.</p>
   <form class="holo-form" method="POST" enctype="multipart/form-data"
         action="{{ url_for('holistic_rubric_distill', rubric_id=rec.id) }}">
-    <label for="material_file">Bestand (.docx, .pptx of .txt)</label>
-    <input type="file" id="material_file" name="material_file" accept=".docx,.pptx,.txt">
+    <label for="material_file">Bestand (.docx, .pptx, .pdf of .txt)</label>
+    <input type="file" id="material_file" name="material_file" accept=".docx,.pptx,.pdf,.txt">
     <label for="material_text" style="margin-top:10px;">Of plak tekst</label>
     <textarea name="material_text" rows="4" placeholder="Plak hier (een deel van) de studiehandleiding of sheets…"></textarea>
     <button class="holo-btn" type="submit" style="margin-top:12px;">Distilleer en toevoegen</button>

@@ -314,6 +314,18 @@ def _find_target_paragraph_idx(
                 # Niet doorsturen naar een sub-heading: de comment hoort bij de alinea zelf.
                 return matched['idx'], f"paragraaf in '{section_name}'"
 
+        # Titel-/kopfeedback: als de snippet een KOPTEKST aanwijst (en er geen
+        # sectiecontext is), plaats de comment op die kop zelf i.p.v. bovenaan.
+        if heading_idx is None:
+            sl = re.sub(r'\s+', ' ', offending_snippet.lower().strip())
+            for item in para_structure:
+                if not item['is_heading'] or _is_toc_line(item['text']):
+                    continue
+                ht = re.sub(r'\s+', ' ', item['text'].lower()).strip()
+                ht_clean = re.sub(r'^[\d.]+\s*', '', ht)
+                if len(ht_clean) >= 6 and (ht_clean in sl or sl in ht):
+                    return item['idx'], 'koptekst'
+
     return heading_idx if heading_idx is not None else 0, f"sectie '{section_name}'"
 
 

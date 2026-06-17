@@ -346,8 +346,8 @@ def holistic_rubric_distill(rubric_id):
     f = request.files.get('material_file')
     material = ''
     if f and f.filename:
-        if not f.filename.lower().endswith(('.docx', '.pptx', '.txt')):
-            flash('Onderwijsmateriaal moet .docx, .pptx of .txt zijn (of plak de tekst).', 'danger')
+        if not f.filename.lower().endswith(('.docx', '.pptx', '.pdf', '.txt')):
+            flash('Onderwijsmateriaal moet .docx, .pptx, .pdf of .txt zijn (of plak de tekst).', 'danger')
             return redirect(url_for('holistic_rubric_edit', rubric_id=rubric_id))
         tmp = os.path.join(_holistic_dir(),
                            f"mat_{uuid.uuid4().hex[:8]}_{secure_filename(f.filename)}")

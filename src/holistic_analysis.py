@@ -251,9 +251,10 @@ de zin/passage bevat waar je opmerking over gaat (niet de zin ervoor of erna). C
 de inhoudsopgave.
 Citeer ALTIJD het concrete tekstfragment zelf, nooit een omschrijving of plaatsaanduiding:
 dus niet "in §3.1.3" maar de letterlijk geciteerde wettekst zelf; bij een typefout het exacte
-woord (bv. "EDPD"); bij een opmerking over een afkortingenlijst of kop het exacte element zelf,
-of — gaat het over een hoofdstuktitel — een zin uit dat hoofdstuk (niet de kop). Meld alleen
-problemen die je aan een concreet, vindbaar fragment kunt koppelen. {sugg_rule}
+woord (bv. "EDPD"); bij een opmerking over een afkortingenlijst of kop het exacte element zelf.
+Gaat de opmerking over een hoofdstuktitel? Citeer dan de TITEL zelf, verbatim (bv. "Hoofdstuk 3
+uitwerking deelvraag 1") — die wordt op de kop geplaatst. Meld alleen problemen die je aan een
+concreet, vindbaar fragment kunt koppelen. {sugg_rule}
 Geef alleen bevindingen die er echt toe doen; een sterk onderdeel mag een leeg lijstje hebben.
 
 Geef je antwoord UITSLUITEND als geldige JSON, zonder extra tekst eromheen, in dit schema:
@@ -263,7 +264,7 @@ Geef je antwoord UITSLUITEND als geldige JSON, zonder extra tekst eromheen, in d
     {{
       "naam": "<naam van het rubric-onderdeel, bv. Methode>",
       "feedback": "<formatieve samenvatting: wat is sterk en wat kan beter — GEEN cijfer; beantwoordt het hoofdstuk zijn deelvraag?>",
-      "anchor": "<verbatim zin uit dit onderdeel om de samenvatting bij te plaatsen (deelvraag of tussenconclusie), of leeg>",
+      "anchor": "<ALTIJD invullen: een verbatim zin uit dit onderdeel (bv. de deelvraag, hoofdvraag of tussenconclusie) waar de samenvatting — ook positieve feedback — als comment bij wordt geplaatst>",
       "findings": [
         {{
           "quote": "<verbatim passage>",
@@ -382,6 +383,16 @@ def extract_material_text(path: str) -> str:
     if ext in ('.docx', '.txt'):
         full, _paras, _h = document_parsing.parse_document(path)
         return full
+    if ext == '.pdf':
+        from pypdf import PdfReader
+        reader = PdfReader(path)
+        parts = []
+        for page in reader.pages:
+            try:
+                parts.append(page.extract_text() or '')
+            except Exception:
+                continue
+        return '\n\n'.join(p for p in parts if p.strip())
     if ext == '.pptx':
         import zipfile
         from html import unescape

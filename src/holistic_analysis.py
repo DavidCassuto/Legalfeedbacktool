@@ -56,6 +56,8 @@ _NL_TAALGEBRUIK = (
 DEFAULT_INHOUD_CRITERIA = (
     "Beoordeel elk onderdeel in samenhang met het HELE document; de deelvragen, methode e.d. "
     "staan mogelijk in een ander hoofdstuk en mag je daarbij betrekken.\n"
+    "- Zijn de deelvragen onderling én ten opzichte van de hoofdvraag voldoende onderscheidend "
+    "(geen overlap; elke deelvraag is een eigen bouwsteen voor de hoofdvraag)?\n"
     "- Beantwoordt het hoofdstuk 'Juridisch onderzoek' de bijbehorende juridische deelvraag/deelvragen?\n"
     "- Beantwoordt het hoofdstuk 'Praktijkonderzoek' de bijbehorende praktijk-deelvraag/deelvragen?\n"
     "- Is er een evaluerende deelvraag? Wordt de praktijk goed getoetst aan het recht? "

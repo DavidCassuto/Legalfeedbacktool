@@ -75,10 +75,12 @@
       <input type="checkbox" name="show_suggestions" value="1" checked> Suggesties tonen (oplossingsrichting meegeven)
     </label>
 
-    <label style="margin-top:12px;">Max. voorbeelden per document-brede categorie (taal / schrijfkwaliteit / AI)</label>
+    <label style="margin-top:12px;">Max. voorbeelden per categorie</label>
     <input type="number" name="max_per_categorie" min="1" max="50" value="{{ defaults.max_per_categorie }}"
       style="width:120px; padding:8px; border:1px solid #CED4DA; border-radius:8px;">
-    <div class="holo-hint">Hoger = grondiger maar meer tokens/kosten. Inhoudelijke eisen per onderdeel (categorie 1)
+    <div class="holo-hint">Geldt <strong>afzonderlijk</strong> voor elk van de drie document-brede categorieën
+      (taalfouten, schrijfkwaliteit, AI-stijldetectie) — dus géén gedeeld totaal. Bij 15 kunnen dat er dus
+      tot ~45 zijn. Hoger = grondiger maar meer tokens/kosten. Inhoudelijke eisen per onderdeel (categorie 1)
       komen uit de tabbladen van het Excel-bestand zelf.</div>
 
     <button class="holo-btn" type="submit" style="margin-top:14px;">Opslaan</button>

@@ -94,6 +94,21 @@ def _build_para_structure(doc: Document) -> List[Dict]:
 # Plaatsbepalingslogica (hierarchy-regel)
 # ---------------------------------------------------------------------------
 
+def _is_toc_line(text: str) -> bool:
+    """Herken een inhoudsopgave-regel: punt-leiders (....) of een tab/spaties gevolgd
+    door een paginanummer. Zulke regels herhalen hoofdstuktitels en veroorzaken
+    foute comment-plaatsingen — daarom uitsluiten bij het plaatsen."""
+    t = (text or '').strip()
+    if not t:
+        return False
+    if re.search(r'\.{4,}', t) or '…' in t or '\t' in t:
+        return True
+    # "Iets ......  78"  of  "Hoofdstuk 3 ... 33" zonder expliciete leaders maar wel eindigend op paginanr
+    if re.search(r'[ .·]{6,}\d{1,4}$', t):
+        return True
+    return False
+
+
 def _find_target_paragraph_idx(
     para_structure: List[Dict],
     section_name: str,
@@ -213,6 +228,8 @@ def _find_target_paragraph_idx(
 
     if offending_snippet and len(offending_snippet.strip()) >= 5:
         snippet_lower = re.sub(r'\s+', ' ', offending_snippet.lower().strip())
+        # Inhoudsopgave-regels uitsluiten: die herhalen hoofdstuktitels en geven foute matches
+        section_items = [it for it in section_items if not _is_toc_line(it.get('text', ''))]
 
         # Poging 1: exacte substring-match (snippet volledig in één paragraaf)
         match_idx = None
@@ -280,7 +297,8 @@ def _find_target_paragraph_idx(
                     )
                 else:
                     # Fallback: document-breed (alleen als sectie-lokaal niets vond)
-                    outside_items = [it for it in para_structure if it not in section_items]
+                    outside_items = [it for it in para_structure
+                                     if it not in section_items and not _is_toc_line(it.get('text', ''))]
                     doc_score, doc_idx = _best_overlap(outside_items)
                     if doc_idx is not None and doc_score >= 0.35:
                         match_idx = doc_idx
@@ -519,7 +537,7 @@ def add_highlights(
         norm = re.sub(r'\s+', ' ', snip.lower().strip())
         for p in paras:
             ptext = ''.join(t.text or '' for t in p.findall(f'.//{{{W_NS}}}t'))
-            if not ptext:
+            if not ptext or _is_toc_line(ptext):
                 continue
             np = re.sub(r'\s+', ' ', ptext.lower())
             if norm in np or (len(norm) >= 15 and norm[:60] in np):

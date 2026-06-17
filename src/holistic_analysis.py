@@ -197,11 +197,15 @@ def _build_user_prompt(rubric_text: str, document_text: str,
 
     cat1_extra = ""
     if cfg.get('inhoud_criteria'):
-        cat1_extra = ("\nEXTRA INHOUDELIJKE CRITERIA (bovenop de rubriek, van de opleiding) — "
-                      "verwerk deze in de \"feedback\" van het passende onderdeel. Beoordeel "
-                      "hierbij EXPLICIET of elk (resultaten)hoofdstuk zijn deelvraag beantwoordt, "
-                      "en vul \"anchor\" met een verbatim zin uit dat onderdeel (bv. de deelvraag "
-                      "of de tussenconclusie) zodat die feedback ook in het document verschijnt:\n"
+        cat1_extra = ("\nEXTRA INHOUDELIJKE CRITERIA (bovenop de rubriek, van de opleiding). "
+                      "Verwerk deze in het passende onderdeel. Geef voor ELKE deelvraag / ELK "
+                      "resultatenhoofdstuk een APARTE bevinding (finding) met als \"quote\" de "
+                      "tussenconclusie of deelvraag van dat hoofdstuk, en in \"comment\" een "
+                      "expliciet oordeel of (en hoe goed) de deelvraag wordt beantwoord — ook als "
+                      "meerdere deelvragen onder hetzelfde rubric-onderdeel vallen. "
+                      "PLAATSING: hoort een tekortkoming bij een ander hoofdstuk (bv. een "
+                      "ontbrekende methodologie hoort thuis in het methode-hoofdstuk, niet bij een "
+                      "tussenconclusie), kies dan een \"quote\" uit DAT hoofdstuk.\n"
                       f"{cfg['inhoud_criteria']}\n")
 
     cat2_instr = (f"\nCATEGORIE TAALFOUTEN (spelling/grammatica/stijl) — vul \"taalfouten\". "
@@ -212,7 +216,10 @@ def _build_user_prompt(rubric_text: str, document_text: str,
                   f"noem terugkerende fouttypes één keer.\n" if cfg['taal_enabled'] else "")
     cat3_instr = (f"\nCATEGORIE JURIDISCHE SCHRIJFKWALITEIT — vul \"schrijfkwaliteit\". "
                   f"Richtlijn van de opleiding: {cfg['stijl_instructies']} "
-                  f"Geef maximaal {cap} belangrijkste punten.\n" if cfg['stijl_enabled'] else "")
+                  f"Geef maximaal {cap} belangrijkste punten. UITZONDERING: structurele eisen die "
+                  f"PER hoofdstuk gelden (bv. een inleidende alinea per hoofdstuk) signaleer je bij "
+                  f"ELK hoofdstuk waar ze ontbreken — die vallen buiten deze limiet.\n"
+                  if cfg['stijl_enabled'] else "")
     cat5_instr = (f"\nCATEGORIE AI-STIJLDETECTIE — vul \"ai_stijl\". "
                   f"Richtlijn van de opleiding: {cfg['ai_instructies']} "
                   f"Geef maximaal {cap} REPRESENTATIEVE voorbeelden.\n" if cfg['ai_enabled'] else "")
@@ -232,7 +239,9 @@ Drie soorten feedback:
 {cat1_extra}{cat2_instr}{cat3_instr}{cat5_instr}
 ZEER BELANGRIJK voor elke "quote": een letterlijk (verbatim) overgenomen stuk tekst uit het
 document, exact zoals het er staat (zelfde woorden, leestekens, hoofdletters). Kopieer het,
-verzin of parafraseer NIET. Houd het kort (één zin of deelzin). {sugg_rule}
+verzin of parafraseer NIET. Houd het kort (één zin of deelzin) en kies de quote zó dat hij EXACT
+de zin/passage bevat waar je opmerking over gaat (niet de zin ervoor of erna). Citeer NOOIT uit
+de inhoudsopgave. {sugg_rule}
 Geef alleen bevindingen die er echt toe doen; een sterk onderdeel mag een leeg lijstje hebben.
 
 Geef je antwoord UITSLUITEND als geldige JSON, zonder extra tekst eromheen, in dit schema:

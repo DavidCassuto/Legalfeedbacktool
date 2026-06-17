@@ -20,7 +20,7 @@ from datetime import date
 
 from config import Config
 from analysis import document_parsing
-from analysis.inline_word_comments import add_inline_comments, add_highlights
+from analysis.inline_word_comments import add_inline_comments, add_highlights, _is_toc_line
 
 logger = logging.getLogger('docucheck.holistic')
 
@@ -241,7 +241,12 @@ ZEER BELANGRIJK voor elke "quote": een letterlijk (verbatim) overgenomen stuk te
 document, exact zoals het er staat (zelfde woorden, leestekens, hoofdletters). Kopieer het,
 verzin of parafraseer NIET. Houd het kort (één zin of deelzin) en kies de quote zó dat hij EXACT
 de zin/passage bevat waar je opmerking over gaat (niet de zin ervoor of erna). Citeer NOOIT uit
-de inhoudsopgave. {sugg_rule}
+de inhoudsopgave.
+Citeer ALTIJD het concrete tekstfragment zelf, nooit een omschrijving of plaatsaanduiding:
+dus niet "in §3.1.3" maar de letterlijk geciteerde wettekst zelf; bij een typefout het exacte
+woord (bv. "EDPD"); bij een opmerking over een afkortingenlijst of kop het exacte element zelf,
+of — gaat het over een hoofdstuktitel — een zin uit dat hoofdstuk (niet de kop). Meld alleen
+problemen die je aan een concreet, vindbaar fragment kunt koppelen. {sugg_rule}
 Geef alleen bevindingen die er echt toe doen; een sterk onderdeel mag een leeg lijstje hebben.
 
 Geef je antwoord UITSLUITEND als geldige JSON, zonder extra tekst eromheen, in dit schema:
@@ -685,7 +690,8 @@ def run_holistic_analysis(
     detected_product_type = (data.get('product_type') or '').strip() or product_type
 
     show_sugg = cfg['show_suggestions']
-    norm_paras = [_normalize(p) for p in paragraphs]
+    # Inhoudsopgave-regels uitsluiten zodat 'vindbaar' overeenkomt met de echte plaatsing
+    norm_paras = [_normalize(p) for p in paragraphs if not _is_toc_line(p)]
     comment_items: list[dict] = []
     unplaced: list[dict] = []
 
@@ -747,9 +753,12 @@ def run_holistic_analysis(
         base, ext = os.path.splitext(output_path)
         comments_tmp = f"{base}__c{ext}"
 
+    # Alleen betrouwbaar plaatsbare comments in het document; de rest blijft zichtbaar
+    # in de "niet-geplaatste"-lijst i.p.v. bovenaan (inhoudsopgave) te belanden.
+    placeable = [fi for fi in comment_items if fi['_locatable']]
     add_inline_comments(
         original_docx_path=docx_path,
-        feedback_items=comment_items,
+        feedback_items=placeable,
         recognized_sections=[],
         output_path=comments_tmp,
     )

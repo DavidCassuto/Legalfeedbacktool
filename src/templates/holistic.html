@@ -36,87 +36,86 @@
 </style>
 
 <div class="header" style="margin-bottom:20px;">
-  <h1>Formatieve feedback <span class="holo-badge">PROTOTYPE</span></h1>
-  <p>Upload een Word-document en kies de rubric. De AI leest het hele document en plaatst
-     opbouwende feedback als Word-comments op de juiste plek — om de student te helpen
-     verbeteren. Geen cijfer, geen beoordeling.</p>
+  <h1>Feedback op een document</h1>
+  <p>Kies de rubric van je opleiding en upload het studentdocument. De AI leest het hele
+     document en plaatst opbouwende feedback als Word-comments op de juiste plek — om de
+     student te helpen verbeteren. Geen cijfer, geen beoordeling.</p>
 </div>
 
 <div class="holo-card">
-  <h2>1. Document + rubric</h2>
   <form class="holo-form" method="POST" action="{{ url_for('holistic_run') }}" enctype="multipart/form-data">
-    <label for="file">Studentdocument (.docx)</label>
+
+    <h2>1. Kies de rubric</h2>
+    {% if saved_rubrics %}
+      <select id="saved_rubric_id" name="saved_rubric_id">
+        {% for r in saved_rubrics %}
+          <option value="{{ r.id }}" {% if form and form.saved_rubric_id == r.id %}selected{% endif %}>{{ r.name }}</option>
+        {% endfor %}
+        <option value="" {% if form and not form.saved_rubric_id %}selected{% endif %}>— anders: zelf een formulier uploaden (zie Geavanceerd) —</option>
+      </select>
+      <div class="holo-hint">Feedback-taal, criteria en toon zitten al in deze rubric.</div>
+    {% else %}
+      <div class="holo-warnbox">Er is nog geen rubric ingesteld voor jouw opleiding.
+        Upload hieronder onder <strong>Geavanceerd</strong> eenmalig het Excel-formulier,
+        of vraag de beheerder de rubric klaar te zetten.</div>
+    {% endif %}
+
+    <h2 style="margin-top:22px;">2. Studentdocument</h2>
+    <label for="file">Word-bestand (.docx)</label>
     <input type="file" id="file" name="file" accept=".docx" required>
     <div class="holo-hint">Alleen .docx — Word-comments kunnen niet in een gescande PDF.</div>
 
-    {% if saved_rubrics %}
-    <label for="saved_rubric_id">Opgeslagen rubric kiezen</label>
-    <select id="saved_rubric_id" name="saved_rubric_id">
-      <option value="">— geen / nieuw bestand uploaden —</option>
-      {% for r in saved_rubrics %}
-        <option value="{{ r.id }}" {% if form and form.saved_rubric_id == r.id %}selected{% endif %}>{{ r.name }}</option>
-      {% endfor %}
-    </select>
-    <div class="holo-hint">Kies een eerder opgeslagen rubric — dan hoef je geen Excel te uploaden.
-      <a href="{{ url_for('holistic_rubrics') }}">Bibliotheek beheren →</a></div>
-    {% else %}
-    <div class="holo-hint" style="margin-top:14px;">
-      💡 Tip: sla een rubric op in de <a href="{{ url_for('holistic_rubrics') }}">rubric-bibliotheek</a>
-      om hem te hergebruiken zonder opnieuw te uploaden.</div>
-    {% endif %}
+    <details style="margin-top:20px; border-top:1px solid #E9ECEF; padding-top:12px;" {% if not saved_rubrics %}open{% endif %}>
+      <summary style="cursor:pointer; color:#52796F; font-weight:600;">Geavanceerd (optioneel — meestal niet nodig)</summary>
 
-    <label for="rubric_file">Of: beoordelingsformulier uploaden (.xlsx)</label>
-    <input type="file" id="rubric_file" name="rubric_file" accept=".xlsx,.xlsm">
-    <div class="holo-hint">Upload het Excel-beoordelingsformulier — niets plakken nodig.
-      De rubriek-tekst wordt automatisch uit het juiste tabblad gehaald.</div>
+      <label for="product_type" style="margin-top:14px;">Beroepsproduct (welk tabblad van de rubric)</label>
+      <select id="product_type" name="product_type">
+        <option value="{{ auto_detect }}" {% if not form or form.product_type == auto_detect %}selected{% endif %}>
+          🔎 Automatisch detecteren (laat de AI het tabblad kiezen)
+        </option>
+        {% for pt in product_types %}
+          <option value="{{ pt }}" {% if form and form.product_type == pt %}selected{% endif %}>{{ pt }}</option>
+        {% endfor %}
+      </select>
 
-    <label for="product_type">Beroepsproduct (welk tabblad)</label>
-    <select id="product_type" name="product_type">
-      <option value="{{ auto_detect }}" {% if not form or form.product_type == auto_detect %}selected{% endif %}>
-        🔎 Automatisch detecteren (laat de AI het tabblad kiezen)
-      </option>
-      {% for pt in product_types %}
-        <option value="{{ pt }}" {% if form and form.product_type == pt %}selected{% endif %}>{{ pt }}</option>
-      {% endfor %}
-    </select>
-    <div class="holo-hint">Kies het tabblad zelf, of laat de AI op basis van het document bepalen
-      om welk beroepsproduct het gaat.</div>
+      <fieldset style="margin-top:16px; border:1px solid #E9ECEF; border-radius:8px; padding:12px 14px;">
+        <legend style="font-weight:600; color:#52796F; padding:0 6px;">Soorten feedback</legend>
+        <label style="font-weight:500; display:block;">
+          <input type="checkbox" name="taal_enabled" value="1" {% if not form or form.taal_enabled %}checked{% endif %}>
+          Taalfouten markeren <span class="holo-hint" style="display:inline;">(spelling/grammatica — gele arcering, geen comment)</span>
+        </label>
+        <label style="font-weight:500; display:block; margin-top:6px;">
+          <input type="checkbox" name="stijl_enabled" value="1" {% if not form or form.stijl_enabled %}checked{% endif %}>
+          Schrijfkwaliteit <span class="holo-hint" style="display:inline;">(zinslengte, wolligheid, alinea's — als Word-comment)</span>
+        </label>
+        <label style="font-weight:500; display:block; margin-top:6px;">
+          <input type="checkbox" name="ai_enabled" value="1" {% if not form or form.ai_enabled %}checked{% endif %}>
+          AI-stijldetectie <span class="holo-hint" style="display:inline;">(patronen die op AI-tekst wijzen — als Word-comment)</span>
+        </label>
+        <label style="font-weight:500; display:block; margin-top:6px;">
+          <input type="checkbox" name="show_suggestions" value="1" {% if not form or form.show_suggestions %}checked{% endif %}>
+          Suggesties tonen <span class="holo-hint" style="display:inline;">(uit = alleen benoemen wat beter kan)</span>
+        </label>
+        <div class="holo-hint" style="margin-top:8px;">Inhoudelijke feedback per onderdeel en de toon
+          komen uit de rubric zelf.</div>
+      </fieldset>
 
-    <fieldset style="margin-top:18px; border:1px solid #E9ECEF; border-radius:8px; padding:12px 14px;">
-      <legend style="font-weight:600; color:#52796F; padding:0 6px;">Soorten feedback</legend>
-      <label style="font-weight:500; display:block;">
-        <input type="checkbox" name="taal_enabled" value="1" {% if not form or form.taal_enabled %}checked{% endif %}>
-        Taalfouten markeren <span class="holo-hint" style="display:inline;">(spelling/grammatica — gele arcering in het document, geen comment)</span>
+      <label style="margin-top:16px; font-weight:500;">
+        <input type="checkbox" name="include_annexes" value="1"
+               {% if form and form.include_annexes %}checked{% endif %}>
+        Bijlagen meenemen in de analyse
       </label>
-      <label style="font-weight:500; display:block; margin-top:6px;">
-        <input type="checkbox" name="stijl_enabled" value="1" {% if not form or form.stijl_enabled %}checked{% endif %}>
-        Juridische schrijfkwaliteit <span class="holo-hint" style="display:inline;">(zinslengte, wolligheid, alinea's — als Word-comment)</span>
-      </label>
-      <label style="font-weight:500; display:block; margin-top:6px;">
-        <input type="checkbox" name="ai_enabled" value="1" {% if not form or form.ai_enabled %}checked{% endif %}>
-        AI-stijldetectie <span class="holo-hint" style="display:inline;">(patronen die op AI-tekst wijzen — als Word-comment)</span>
-      </label>
-      <label style="font-weight:500; display:block; margin-top:6px;">
-        <input type="checkbox" name="show_suggestions" value="1" {% if not form or form.show_suggestions %}checked{% endif %}>
-        Suggesties tonen <span class="holo-hint" style="display:inline;">(uit = alleen benoemen wat beter kan, de student zoekt zelf de oplossing)</span>
-      </label>
-      <div class="holo-hint" style="margin-top:8px;">Inhoudelijke feedback per onderdeel komt uit de rubriek.
-        Toon en criteria stel je in bij de rubric in de
-        <a href="{{ url_for('holistic_rubrics') }}">bibliotheek</a>.</div>
-    </fieldset>
+      <div class="holo-hint">Standaard worden bijlagen overgeslagen (het beroepsproduct wordt er wel
+        uit gevist). Vink aan om het hele document te beoordelen.</div>
 
-    <label style="margin-top:16px; font-weight:500;">
-      <input type="checkbox" name="include_annexes" value="1"
-             {% if form and form.include_annexes %}checked{% endif %}>
-      Bijlagen meenemen in de analyse
-    </label>
-    <div class="holo-hint">Standaard worden de bijlagen overgeslagen (maar het beroepsproduct wordt
-      eruit gevist). Vink aan om het hele document te beoordelen.</div>
+      <label for="rubric_file" style="margin-top:16px;">Zelf een beoordelingsformulier uploaden (.xlsx)</label>
+      <input type="file" id="rubric_file" name="rubric_file" accept=".xlsx,.xlsm">
+      <div class="holo-hint">Alleen nodig als je géén opgeslagen rubric kiest. De rubriek-tekst
+        wordt automatisch uit het juiste tabblad gehaald.</div>
 
-    <details style="margin-top:16px;">
-      <summary style="cursor:pointer; color:#52796F; font-weight:600;">Of: rubric als tekst plakken (optioneel)</summary>
+      <label for="rubric_text" style="margin-top:16px;">Of: rubric als tekst plakken</label>
       <textarea id="rubric_text" name="rubric_text"
-                placeholder="Alleen invullen als je géén Excel-bestand uploadt...">{{ form.rubric_text if form else '' }}</textarea>
+                placeholder="Alleen invullen als je géén Excel-bestand uploadt en geen rubric kiest...">{{ form.rubric_text if form else '' }}</textarea>
     </details>
 
     <button class="holo-btn" type="submit">Kosten schatten →</button>

@@ -19,6 +19,7 @@ import logging
 from datetime import date
 
 from config import Config
+import languages
 from analysis import document_parsing
 from analysis.inline_word_comments import add_inline_comments, add_highlights, _is_toc_line
 
@@ -99,31 +100,89 @@ DEFAULT_AI_INSTRUCTIES = (
 )
 DEFAULT_MAX_PER_CATEGORIE = 15
 
+# ── Engelse standaardsets (Fase 0 — eerste opzet; verfijnen in Fase 1) ──────────
+_EN_INHOUD = (
+    "Assess each part in relation to the WHOLE document; sub-questions, method etc. may "
+    "appear in another chapter and may be used.\n"
+    "- Are the sub-questions sufficiently distinct from each other AND from the main question "
+    "(no overlap; each is a building block for the main question)?\n"
+    "- Does each results chapter actually answer its corresponding sub-question?\n"
+    "- Is there an evaluative sub-question? Are clear, MEASURABLE criteria formulated and is the "
+    "subject properly tested against them?\n"
+    "- Flag parts or whole results chapters that do NOT contribute to answering the (sub-)questions, "
+    "and explain why they are not relevant."
+)
+_EN_TAAL = (
+    "Look for spelling, grammar, punctuation and clear style errors: subject-verb agreement, verb "
+    "tense, articles, plural/possessive, capitalisation, run-on sentences and obvious typos."
+)
+_EN_STIJL = (
+    "Assess academic writing quality: sentences not too long or complex, no vague or wordy language, "
+    "no overly long or unstructured paragraphs, active rather than passive where it helps, consistent "
+    "and precise terminology, and good structure and coherence between paragraphs."
+)
+_EN_AI = (
+    "Flag writing-style patterns that weaken the text and often indicate AI-generated writing. "
+    "Assess ONLY style, not content:\n"
+    "- Generic openings without concrete content ('In today's era...', 'It is crucial to...').\n"
+    "- Symmetrical paragraph structure: every paragraph the same length and shape, no variation in tone.\n"
+    "- Hyperbolic/promotional language without support ('crucial', 'essential', 'groundbreaking', 'delve into').\n"
+    "- Lack of academic caution: claims stated as absolute truth without 'appears', 'suggests', 'may'.\n"
+    "- Tautologies and redundant phrasing.\n"
+    "- Overuse of formal connectives ('moreover', 'furthermore', 'thus', 'in order to').\n"
+    "- Too polished: no rough edges or personal perspective.\n"
+    "- References to sources that are not concretely cited or applied.\n"
+    "Do NOT flag: content shortcomings, grammar/spelling, or style choices that do not indicate AI."
+)
+_EN_TOON = (
+    "Write encouragingly, respectfully and concretely, and address the student directly. Explain WHY "
+    "something can be improved so the student learns — do not rewrite the text for the student, but "
+    "point the way to a better formulation. Use language the audience understands; avoid jargon in the "
+    "feedback itself."
+)
+
+# Standaard-criteria per taal. Hebreeuws (Fase 3) gebruikt voorlopig de Engelse
+# criteriatekst als placeholder; de feedback komt wél in het Hebreeuws via de
+# output-instructie. De Hebreeuwse criteria zelf zijn nog te herschrijven.
+DEFAULTS_BY_LANG = {
+    'nl': {'inhoud': DEFAULT_INHOUD_CRITERIA, 'taal': DEFAULT_TAAL_INSTRUCTIES,
+           'stijl': DEFAULT_STIJL_INSTRUCTIES, 'ai': DEFAULT_AI_INSTRUCTIES, 'toon': DEFAULT_TOON},
+    'en': {'inhoud': _EN_INHOUD, 'taal': _EN_TAAL, 'stijl': _EN_STIJL, 'ai': _EN_AI, 'toon': _EN_TOON},
+}
+DEFAULTS_BY_LANG['he'] = DEFAULTS_BY_LANG['en']
+
 
 def _merge_config(cfg: dict | None) -> dict:
-    """Vul een (deels lege) feedback-configuratie aan met de standaarden."""
+    """Vul een (deels lege) feedback-configuratie aan met de standaarden van de gekozen taal."""
     cfg = dict(cfg or {})
+    lang = languages.normalize(cfg.get('language'))
+    d = DEFAULTS_BY_LANG.get(lang, DEFAULTS_BY_LANG[languages.DEFAULT_LANGUAGE])
     return {
-        'inhoud_criteria':  (cfg.get('inhoud_criteria') or DEFAULT_INHOUD_CRITERIA).strip(),
+        'language':         lang,
+        'inhoud_criteria':  (cfg.get('inhoud_criteria') or d['inhoud']).strip(),
         'taal_enabled':     cfg.get('taal_enabled', True),
-        'taal_instructies': (cfg.get('taal_instructies') or DEFAULT_TAAL_INSTRUCTIES).strip(),
+        'taal_instructies': (cfg.get('taal_instructies') or d['taal']).strip(),
         'onderwijs_criteria': (cfg.get('onderwijs_criteria') or '').strip(),
         'stijl_enabled':    cfg.get('stijl_enabled', True),
-        'stijl_instructies': (cfg.get('stijl_instructies') or DEFAULT_STIJL_INSTRUCTIES).strip(),
+        'stijl_instructies': (cfg.get('stijl_instructies') or d['stijl']).strip(),
         'ai_enabled':       cfg.get('ai_enabled', True),
-        'ai_instructies':   (cfg.get('ai_instructies') or DEFAULT_AI_INSTRUCTIES).strip(),
-        'toon':             (cfg.get('toon') or DEFAULT_TOON).strip(),
+        'ai_instructies':   (cfg.get('ai_instructies') or d['ai']).strip(),
+        'toon':             (cfg.get('toon') or d['toon']).strip(),
         'show_suggestions': cfg.get('show_suggestions', True),
         'max_per_categorie': int(cfg.get('max_per_categorie') or DEFAULT_MAX_PER_CATEGORIE),
     }
 
 
-def _build_system_prompt(product_type: str, toon: str = '') -> str:
+def _build_system_prompt(product_type: str, toon: str = '', language: str = 'nl') -> str:
     d = date.today()
     maanden = ['januari', 'februari', 'maart', 'april', 'mei', 'juni',
                'juli', 'augustus', 'september', 'oktober', 'november', 'december']
     vandaag = f"{d.day} {maanden[d.month - 1]} {d.year}"
-    base = (
+    lang_en = languages.english_name(language)
+    out_lang = (f"IMPORTANT: Write ALL feedback — summaries, comments and suggestions — "
+                f"exclusively in {lang_en}. Keep the verbatim 'quote' values exactly as they "
+                f"appear in the document (do not translate them).\n\n")
+    base = out_lang + (
         "Je bent een ervaren Nederlandse afstudeerbegeleider die FORMATIEVE feedback geeft "
         f"op studentwerk (producttype: {product_type}). "
         "Je doel is de student helpen het werk te verbeteren — NIET beoordelen of becijferen. "
@@ -362,7 +421,7 @@ def estimate_run(rubric_text: str, docx_path: str, product_type: str = '',
     cfg = _merge_config(feedback_config)
     system_prompt = _build_system_prompt(
         'automatisch te bepalen' if detect_product_type else (product_type or 'Onbekend'),
-        cfg['toon'])
+        cfg['toon'], cfg['language'])
     prefix, doc_block = _build_user_prompt(rubric_text, analyze_text, detect_product_type, cfg)
 
     input_chars = len(system_prompt) + len(prefix) + len(doc_block)
@@ -741,7 +800,8 @@ def run_holistic_analysis(
     # 2. LLM-call (met prompt-caching op systeemprompt + rubric)
     cfg = _merge_config(feedback_config)
     system_prompt = _build_system_prompt(
-        'automatisch te bepalen' if detect_product_type else product_type, cfg['toon'])
+        'automatisch te bepalen' if detect_product_type else product_type,
+        cfg['toon'], cfg['language'])
     cacheable_prefix, document_block = _build_user_prompt(
         rubric_text, analyze_text, detect_product_type, cfg)
     llm = _call_llm(system_prompt, cacheable_prefix, document_block, model)

@@ -35,16 +35,24 @@
   <form class="holo-form" method="POST" action="{{ url_for('holistic_rubric_add') }}" enctype="multipart/form-data">
     <label for="name">Naam (bv. “HBO-Rechten Afstuderen 2025-2026”)</label>
     <input type="text" id="name" name="name" placeholder="Laat leeg om de bestandsnaam te gebruiken">
+
+    <label for="language">Taal van de feedback</label>
+    <select id="language" name="language" style="padding:8px; border:1px solid #CED4DA; border-radius:8px;">
+      {% for code, naam in lang_choices %}<option value="{{ code }}">{{ naam }}</option>{% endfor %}
+    </select>
+    <div class="holo-hint">De taal waarin de student feedback krijgt. De criteriavelden hieronder leeg laten =
+      automatisch de standaardcriteria van die taal.</div>
+
     <label for="rubric_file">Beoordelingsformulier (.xlsx)</label>
     <input type="file" id="rubric_file" name="rubric_file" accept=".xlsx,.xlsm" required>
     <div class="holo-hint">De rubric-tekst wordt uit alle tabbladen (beroepsproducten) gehaald en bewaard.</div>
 
-    <div class="holo-hint" style="margin-top:14px;">De velden hieronder zijn <strong>kant-en-klaar ingevuld</strong>
-      met een standaardset. Pas aan wat jullie opleiding anders wil — anders blijft de standaard gelden.</div>
+    <div class="holo-hint" style="margin-top:14px;">De criteriavelden hieronder mag je <strong>leeg laten</strong>
+      (dan gelden de standaardcriteria van de gekozen taal) of zelf invullen.</div>
 
     <label style="margin-top:12px;">1. Extra inhoudelijke criteria (bovenop de rubriek — beoordeeld in samenhang met het hele document)</label>
     <textarea name="inhoud_criteria" rows="7"
-      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;">{{ defaults.inhoud_criteria }}</textarea>
+      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;"></textarea>
     <div class="holo-hint">Bijv. of de resultatenhoofdstukken de deelvragen beantwoorden, of de praktijk goed
       aan het recht wordt getoetst, en of irrelevante delen worden gesignaleerd. Het model heeft het hele
       document in beeld, dus kruisverwijzingen (deelvragen ↔ resultaten) kosten niets extra.</div>
@@ -53,23 +61,23 @@
       <input type="checkbox" name="taal_enabled" value="1" checked> 2. Taalfouten (spelling/grammatica) — markeren
     </label>
     <textarea name="taal_instructies" rows="3"
-      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;">{{ defaults.taal_instructies }}</textarea>
+      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;"></textarea>
 
     <label style="margin-top:12px;">
       <input type="checkbox" name="stijl_enabled" value="1" checked> 3. Juridische schrijfkwaliteit — als comment
     </label>
     <textarea name="stijl_instructies" rows="3"
-      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;">{{ defaults.stijl_instructies }}</textarea>
+      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;"></textarea>
 
     <label style="margin-top:12px;">
       <input type="checkbox" name="ai_enabled" value="1" checked> 5. AI-stijldetectie — als comment
     </label>
     <textarea name="ai_instructies" rows="5"
-      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;">{{ defaults.ai_instructies }}</textarea>
+      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;"></textarea>
 
     <label style="margin-top:12px;">4. Toon van de feedback</label>
     <textarea name="toon" rows="3"
-      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;">{{ defaults.toon }}</textarea>
+      style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit; font-size:0.93em;"></textarea>
 
     <label style="margin-top:12px; font-weight:500;">
       <input type="checkbox" name="show_suggestions" value="1" checked> Suggesties tonen (oplossingsrichting meegeven)

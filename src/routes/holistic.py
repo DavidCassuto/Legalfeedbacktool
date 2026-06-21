@@ -27,6 +27,7 @@ from auth import login_required
 import holistic_analysis
 import rubric_extraction
 import rubric_library
+import languages
 
 logger = logging.getLogger('docucheck.holistic')
 
@@ -138,6 +139,7 @@ def holistic_run():
         'stijl_enabled':     stijl_enabled,
         'ai_enabled':        ai_enabled,
         'show_suggestions':  show_suggestions,
+        'language':          saved_cfg.get('language', 'nl'),
         'inhoud_criteria':   saved_cfg.get('inhoud_criteria', ''),
         'onderwijs_criteria': saved_cfg.get('onderwijs_criteria', ''),
         'taal_instructies':  saved_cfg.get('taal_instructies', ''),
@@ -241,6 +243,7 @@ def holistic_download(naam):
 def holistic_rubrics():
     """Beheerpagina: opgeslagen rubrics tonen + nieuwe toevoegen."""
     return render_template('holistic_rubrics.html', saved_rubrics=_saved_rubrics(),
+                           lang_choices=languages.choices(),
                            defaults={
                                'inhoud_criteria':   holistic_analysis.DEFAULT_INHOUD_CRITERIA,
                                'taal_instructies':  holistic_analysis.DEFAULT_TAAL_INSTRUCTIES,
@@ -256,6 +259,7 @@ def holistic_rubric_add():
     """Upload een Excel-formulier en bewaar het als herbruikbare rubric."""
     name = (request.form.get('name') or '').strip()
     feedback_config = {
+        'language':          (request.form.get('language') or 'nl').strip(),
         'inhoud_criteria':   (request.form.get('inhoud_criteria') or '').strip(),
         'onderwijs_criteria': (request.form.get('onderwijs_criteria') or '').strip(),
         'taal_enabled':      bool(request.form.get('taal_enabled')),
@@ -304,13 +308,15 @@ def holistic_rubric_edit(rubric_id):
         flash('Rubric niet gevonden.', 'danger')
         return redirect(url_for('holistic_rubrics'))
     cfg = holistic_analysis._merge_config(rec.get('feedback_config'))
-    return render_template('holistic_rubric_edit.html', rec=rec, cfg=cfg)
+    return render_template('holistic_rubric_edit.html', rec=rec, cfg=cfg,
+                           lang_choices=languages.choices())
 
 
 @login_required
 def holistic_rubric_update(rubric_id):
     """Sla bewerkte naam + feedback-config op."""
     feedback_config = {
+        'language':          (request.form.get('language') or 'nl').strip(),
         'inhoud_criteria':   (request.form.get('inhoud_criteria') or '').strip(),
         'onderwijs_criteria': (request.form.get('onderwijs_criteria') or '').strip(),
         'taal_enabled':      bool(request.form.get('taal_enabled')),

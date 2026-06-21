@@ -57,6 +57,12 @@
     <label for="name">Naam</label>
     <input type="text" id="name" name="name" value="{{ rec.name }}">
 
+    <label for="language">Taal van de feedback</label>
+    <select id="language" name="language" style="padding:8px; border:1px solid #CED4DA; border-radius:8px;">
+      {% for code, naam in lang_choices %}<option value="{{ code }}" {% if cfg.language == code %}selected{% endif %}>{{ naam }}</option>{% endfor %}
+    </select>
+    <div class="holo-hint">De taal waarin de student feedback krijgt.</div>
+
     <label>1. Extra inhoudelijke criteria (bovenop de rubriek — beoordeeld in samenhang met het hele document)</label>
     <textarea name="inhoud_criteria" rows="8">{{ cfg.inhoud_criteria }}</textarea>
 

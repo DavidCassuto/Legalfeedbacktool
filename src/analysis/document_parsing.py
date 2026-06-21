@@ -1,7 +1,7 @@
 import re
 from docx import Document # pip install python-docx
 
-def parse_document(file_path: str) -> tuple[str, list[str], list[dict]]:
+def parse_document(file_path: str, mark_objects: bool = False) -> tuple[str, list[str], list[dict]]:
     """
     Parses een document (TXT of DOCX) en extraheert de volledige tekst,
     paragrafen en kopjes met hun niveaus en karakterposities.
@@ -70,10 +70,28 @@ def parse_document(file_path: str) -> tuple[str, list[str], list[dict]]:
         # Reset current_char_offset voor docx, want full_text wordt hier opgebouwd
         current_char_offset = 0
 
+        # Helper: detecteer een figuur/afbeelding in een paragraaf en geef een marker
+        def _figure_marker(para):
+            from docx.oxml.ns import qn
+            el = para._p
+            if el.find('.//' + qn('w:drawing')) is None and el.find('.//' + qn('w:pict')) is None:
+                return ''
+            descr = ''
+            for dp in el.iter():
+                if dp.tag.endswith('}docPr'):
+                    descr = (dp.get('descr') or dp.get('name') or '').strip()
+                    if descr:
+                        break
+            return f'[FIGUUR: {descr}]' if descr else '[FIGUUR]'
+
         # Helper: verwerk één paragraaf-object
         def _verwerk_para(para):
             nonlocal full_text, current_char_offset
             para_text = para.text
+            if mark_objects:
+                fm = _figure_marker(para)
+                if fm:
+                    para_text = (para_text.rstrip() + ' ' + fm) if para_text.strip() else fm
             paragraphs.append(para_text.strip())
 
             style_name = para.style.name if para.style else 'Normal'
@@ -116,6 +134,10 @@ def parse_document(file_path: str) -> tuple[str, list[str], list[dict]]:
         # Helper: verwerk een tabel — voeg cel-tekst toe als leesbare blokken
         def _verwerk_tabel(tabel):
             nonlocal full_text, current_char_offset
+            if mark_objects:
+                full_text += '[TABEL]\n'
+                paragraphs.append('[TABEL]')
+                current_char_offset += len('[TABEL]') + 1
             for rij in tabel.rows:
                 cel_teksten = [cel.text.strip() for cel in rij.cells]
                 # Dedupleer samengevoegde cellen (python-docx herhaalt merged cells)
@@ -128,6 +150,10 @@ def parse_document(file_path: str) -> tuple[str, list[str], list[dict]]:
                     full_text += rij_tekst + '\n\n'
                     paragraphs.append(rij_tekst)
                     current_char_offset += len(rij_tekst) + 2
+            if mark_objects:
+                full_text += '[/TABEL]\n\n'
+                paragraphs.append('[/TABEL]')
+                current_char_offset += len('[/TABEL]') + 2
 
         # Itereer body-elementen IN VOLGORDE (paragrafen én tabellen)
         from docx.oxml.ns import qn

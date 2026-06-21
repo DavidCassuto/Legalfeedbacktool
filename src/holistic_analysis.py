@@ -236,6 +236,10 @@ def _build_user_prompt(rubric_text: str, document_text: str,
 Geef FORMATIEVE, opbouwende feedback om de student te helpen LEREN schrijven. Geen cijfer
 of beoordeling. Koppel elke bevinding aan een EXACTE passage in het document.
 
+In de tekst markeren [TABEL] ... [/TABEL] een tabel en [FIGUUR: ...] een figuur/afbeelding
+(deze markers staan niet in het echte document). Gebruik ze om te beoordelen of een tabel of
+figuur correct is ingeleid en toegelicht. Citeer deze markers NIET als "quote".
+
 Het document bevat het onderzoeksrapport en, mogelijk verderop of tussen de bijlagen,
 het BEROEPSPRODUCT (adviesnota, advies, ontwerp, implementatieplan of analyse). Geef feedback
 op het rapport én op het beroepsproduct (Deel B van de rubric). Overige bijlagen (interviews,
@@ -347,7 +351,7 @@ def estimate_run(rubric_text: str, docx_path: str, product_type: str = '',
     """
     model = model or DEFAULT_MODEL
     pt_for_bp = 'automatisch te bepalen' if detect_product_type else (product_type or '')
-    full_text, _paras, headings = document_parsing.parse_document(docx_path)
+    full_text, _paras, headings = document_parsing.parse_document(docx_path, mark_objects=True)
     if include_annexes:
         analyze_text = full_text
         annex_info = {'stripped': False, 'annex_heading': None, 'beroepsproduct': None,
@@ -717,7 +721,7 @@ def run_holistic_analysis(
                 os.path.basename(docx_path), product_type, model)
 
     # 1. Document parsen (hergebruik bestaande parser)
-    full_text, paragraphs, headings = document_parsing.parse_document(docx_path)
+    full_text, paragraphs, headings = document_parsing.parse_document(docx_path, mark_objects=True)
     if not full_text.strip():
         raise RuntimeError("Kon geen tekst uit het document halen (leeg of onleesbaar).")
 

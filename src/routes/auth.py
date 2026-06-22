@@ -26,6 +26,7 @@ def login():
             session['user_id']   = user['id']
             session['username']  = user['username']
             session['user_role'] = user['role']
+            session['organization_id'] = user['organization_id']
             # Eerste login → welkomstscherm (alleen voor consumers)
             if user['role'] == 'consumer' and user['first_login']:
                 return redirect(url_for('welcome'))

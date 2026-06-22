@@ -23,7 +23,8 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from auth import login_required
+from auth import login_required, current_user_org_id, is_admin
+from database import get_db
 import holistic_analysis
 import rubric_extraction
 import rubric_library
@@ -46,7 +47,31 @@ def _holistic_dir() -> str:
 
 
 def _saved_rubrics():
-    return rubric_library.list_rubrics(current_app.config['UPLOAD_FOLDER'])
+    """Rubrics zichtbaar voor de huidige gebruiker: beheerder ziet alles,
+    een docent (consumer) alleen de rubric(s) van de eigen organisatie."""
+    uf = current_app.config['UPLOAD_FOLDER']
+    if is_admin():
+        return rubric_library.list_rubrics(uf)
+    return rubric_library.list_rubrics(uf, organization_id=current_user_org_id())
+
+
+def _organizations():
+    """Alle klanten (organisaties) voor de keuzelijst."""
+    rows = get_db().execute('SELECT id, name FROM organizations ORDER BY name').fetchall()
+    return [{'id': r['id'], 'name': r['name']} for r in rows]
+
+
+def _org_names():
+    """Map organisatie-id -> naam, voor weergave in de lijst."""
+    return {o['id']: o['name'] for o in _organizations()}
+
+
+def _org_id_for_save():
+    """Organisatie waaronder een rubric wordt opgeslagen: een beheerder kiest hem
+    in het formulier; een docent krijgt automatisch zijn eigen organisatie."""
+    if is_admin():
+        return request.form.get('organization_id')
+    return current_user_org_id()
 
 
 @login_required
@@ -245,6 +270,8 @@ def holistic_rubrics():
     """Beheerpagina: opgeslagen rubrics tonen + nieuwe toevoegen."""
     return render_template('holistic_rubrics.html', saved_rubrics=_saved_rubrics(),
                            lang_choices=languages.choices(),
+                           organizations=_organizations(), org_names=_org_names(),
+                           current_org_id=current_user_org_id(), user_is_admin=is_admin(),
                            defaults={
                                'inhoud_criteria':   holistic_analysis.DEFAULT_INHOUD_CRITERIA,
                                'taal_instructies':  holistic_analysis.DEFAULT_TAAL_INSTRUCTIES,
@@ -288,7 +315,8 @@ def holistic_rubric_add():
         if not name:
             name = os.path.splitext(rubric_file.filename)[0]
         rec = rubric_library.save_rubric(current_app.config['UPLOAD_FOLDER'], name, tmp,
-                                         feedback_config=feedback_config)
+                                         feedback_config=feedback_config,
+                                         organization_id=_org_id_for_save())
         flash(f"Rubric '{rec['name']}' opgeslagen ({len(rec['tabs'])} beroepsproducten).", 'success')
     except Exception as e:
         logger.error("Rubric opslaan mislukt: %s", e)
@@ -310,7 +338,9 @@ def holistic_rubric_edit(rubric_id):
         return redirect(url_for('holistic_rubrics'))
     cfg = holistic_analysis._merge_config(rec.get('feedback_config'))
     return render_template('holistic_rubric_edit.html', rec=rec, cfg=cfg,
-                           lang_choices=languages.choices())
+                           lang_choices=languages.choices(),
+                           organizations=_organizations(),
+                           user_is_admin=is_admin())
 
 
 @login_required
@@ -330,9 +360,12 @@ def holistic_rubric_update(rubric_id):
         'show_suggestions':  bool(request.form.get('show_suggestions')),
         'max_per_categorie': int(request.form.get('max_per_categorie') or 0) or None,
     }
+    update_kwargs = {'name': request.form.get('name'), 'feedback_config': feedback_config}
+    # Alleen een beheerder mag de klant-koppeling wijzigen.
+    if is_admin():
+        update_kwargs['organization_id'] = request.form.get('organization_id')
     rec = rubric_library.update_rubric(
-        current_app.config['UPLOAD_FOLDER'], rubric_id,
-        name=request.form.get('name'), feedback_config=feedback_config)
+        current_app.config['UPLOAD_FOLDER'], rubric_id, **update_kwargs)
     if rec:
         flash(f"Rubric '{rec['name']}' bijgewerkt.", 'success')
     else:

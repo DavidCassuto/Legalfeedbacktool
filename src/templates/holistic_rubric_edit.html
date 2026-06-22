@@ -63,6 +63,15 @@
     </select>
     <div class="holo-hint">De taal waarin de student feedback krijgt.</div>
 
+    {% if user_is_admin %}
+    <label for="organization_id">Klant (organisatie)</label>
+    <select id="organization_id" name="organization_id" style="padding:8px; border:1px solid #CED4DA; border-radius:8px;">
+      <option value="">— nog niet gekoppeld —</option>
+      {% for o in organizations %}<option value="{{ o.id }}" {% if rec.organization_id == o.id %}selected{% endif %}>{{ o.name }}</option>{% endfor %}
+    </select>
+    <div class="holo-hint">Bepaalt welke docenten deze rubric zien.</div>
+    {% endif %}
+
     <label>1. Extra inhoudelijke criteria (bovenop de rubriek — beoordeeld in samenhang met het hele document)</label>
     <textarea name="inhoud_criteria" rows="8">{{ cfg.inhoud_criteria }}</textarea>
 

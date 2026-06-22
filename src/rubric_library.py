@@ -30,10 +30,26 @@ def _safe_id(rubric_id: str) -> str | None:
     return rubric_id if re.fullmatch(r'[0-9a-f]{6,32}', rubric_id or '') else None
 
 
+# Sentinel zodat update_rubric onderscheid maakt tussen "niet meegegeven" en "op None zetten".
+_UNSET = object()
+
+
+def _norm_org(org_id) -> int | None:
+    """Normaliseer een organisatie-id naar int of None (lege string -> None)."""
+    if org_id in (None, '', 0, '0'):
+        return None
+    try:
+        return int(org_id)
+    except (TypeError, ValueError):
+        return None
+
+
 def save_rubric(upload_folder: str, name: str, xlsx_path: str,
-                feedback_config: dict | None = None) -> dict:
+                feedback_config: dict | None = None,
+                organization_id=None) -> dict:
     """Extraheer de tabs uit het Excel-bestand en sla ze op onder een naam.
-    feedback_config = de feedback-instellingen van de opleiding (taal/stijl/toon/suggesties)."""
+    feedback_config = de feedback-instellingen van de opleiding (taal/stijl/toon/suggesties).
+    organization_id = de klant (organisatie) waar deze rubric bij hoort, of None."""
     tabs = rubric_extraction.extract_rubric_tabs(xlsx_path)
     if not tabs:
         raise ValueError("Geen rubric-tekst gevonden in het Excel-bestand.")
@@ -41,6 +57,7 @@ def save_rubric(upload_folder: str, name: str, xlsx_path: str,
     record = {
         'id':              rubric_id,
         'name':            (name or 'Naamloze rubric').strip(),
+        'organization_id': _norm_org(organization_id),
         'tabs':            tabs,
         'feedback_config': feedback_config or {},
         'created_at':      datetime.now().isoformat(timespec='seconds'),
@@ -51,8 +68,14 @@ def save_rubric(upload_folder: str, name: str, xlsx_path: str,
     return record
 
 
-def list_rubrics(upload_folder: str) -> list[dict]:
-    """Lijst van opgeslagen rubrics (zonder de volledige tekst), nieuwste eerst."""
+def list_rubrics(upload_folder: str, organization_id=_UNSET) -> list[dict]:
+    """Lijst van opgeslagen rubrics (zonder de volledige tekst), nieuwste eerst.
+
+    organization_id:
+      _UNSET  -> alle rubrics (beheerder).
+      een id  -> alleen rubrics van die organisatie (docent ziet alleen de eigen opleiding).
+    """
+    want_org = _UNSET if organization_id is _UNSET else _norm_org(organization_id)
     out = []
     d = _library_dir(upload_folder)
     for fn in os.listdir(d):
@@ -61,12 +84,16 @@ def list_rubrics(upload_folder: str) -> list[dict]:
         try:
             with open(os.path.join(d, fn), encoding='utf-8') as f:
                 rec = json.load(f)
+            rec_org = _norm_org(rec.get('organization_id'))
+            if want_org is not _UNSET and rec_org != want_org:
+                continue
             out.append({
-                'id':         rec['id'],
-                'name':       rec.get('name', ''),
-                'tab_names':  list((rec.get('tabs') or {}).keys()),
-                'has_config': bool(rec.get('feedback_config')),
-                'created_at': rec.get('created_at', ''),
+                'id':              rec['id'],
+                'name':            rec.get('name', ''),
+                'organization_id': rec_org,
+                'tab_names':       list((rec.get('tabs') or {}).keys()),
+                'has_config':      bool(rec.get('feedback_config')),
+                'created_at':      rec.get('created_at', ''),
             })
         except (json.JSONDecodeError, KeyError, OSError):
             continue
@@ -86,8 +113,9 @@ def get_rubric(upload_folder: str, rubric_id: str) -> dict | None:
 
 
 def update_rubric(upload_folder: str, rubric_id: str,
-                  name: str | None = None, feedback_config: dict | None = None) -> dict | None:
-    """Werk naam en/of feedback-config van een opgeslagen rubric bij (tabs blijven)."""
+                  name: str | None = None, feedback_config: dict | None = None,
+                  organization_id=_UNSET) -> dict | None:
+    """Werk naam, feedback-config en/of organisatie van een opgeslagen rubric bij (tabs blijven)."""
     rec = get_rubric(upload_folder, rubric_id)
     if not rec:
         return None
@@ -95,6 +123,8 @@ def update_rubric(upload_folder: str, rubric_id: str,
         rec['name'] = name.strip()
     if feedback_config is not None:
         rec['feedback_config'] = feedback_config
+    if organization_id is not _UNSET:
+        rec['organization_id'] = _norm_org(organization_id)
     path = os.path.join(_library_dir(upload_folder), f"{rec['id']}.json")
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(rec, f, ensure_ascii=False)

@@ -43,6 +43,15 @@
     <div class="holo-hint">De taal waarin de student feedback krijgt. De criteriavelden hieronder leeg laten =
       automatisch de standaardcriteria van die taal.</div>
 
+    {% if user_is_admin %}
+    <label for="organization_id">Klant (organisatie)</label>
+    <select id="organization_id" name="organization_id" style="padding:8px; border:1px solid #CED4DA; border-radius:8px;">
+      <option value="">— nog niet gekoppeld —</option>
+      {% for o in organizations %}<option value="{{ o.id }}" {% if current_org_id == o.id %}selected{% endif %}>{{ o.name }}</option>{% endfor %}
+    </select>
+    <div class="holo-hint">Bepaalt welke docenten deze rubric zien. Niet gekoppeld = alleen voor beheerders zichtbaar.</div>
+    {% endif %}
+
     <label for="rubric_file">Beoordelingsformulier (.xlsx)</label>
     <input type="file" id="rubric_file" name="rubric_file" accept=".xlsx,.xlsm" required>
     <div class="holo-hint">De rubric-tekst wordt uit alle tabbladen (beroepsproducten) gehaald en bewaard.</div>
@@ -99,11 +108,12 @@
   <h2>Opgeslagen rubrics ({{ saved_rubrics|length }})</h2>
   {% if saved_rubrics %}
     <table class="holo">
-      <thead><tr><th>Naam</th><th>Beroepsproducten</th><th>Feedback-aanpak</th><th>Opgeslagen</th><th></th></tr></thead>
+      <thead><tr><th>Naam</th><th>Klant</th><th>Beroepsproducten</th><th>Feedback-aanpak</th><th>Opgeslagen</th><th></th></tr></thead>
       <tbody>
         {% for r in saved_rubrics %}
           <tr>
             <td><a href="{{ url_for('holistic_rubric_edit', rubric_id=r.id) }}"><strong>{{ r.name }}</strong></a></td>
+            <td>{% if r.organization_id and r.organization_id in org_names %}{{ org_names[r.organization_id] }}{% else %}<span class="holo-hint">—</span>{% endif %}</td>
             <td>{% for t in r.tab_names %}<span class="tag">{{ t }}</span>{% endfor %}</td>
             <td>{% if r.has_config %}✅ ingesteld{% else %}standaard{% endif %}</td>
             <td>{{ r.created_at[:10] }}</td>

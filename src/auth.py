@@ -44,6 +44,26 @@ def current_user_role():
     return session.get('user_role')
 
 
+def current_user_org_id():
+    """Geeft het organisatie-id (klant) van de ingelogde gebruiker, of None.
+
+    Wordt bij login in de sessie gezet; voor bestaande sessies (van vóór deze
+    wijziging) wordt het eenmalig uit de database bijgehaald en gecachet.
+    """
+    if 'user_id' not in session:
+        return None
+    if 'organization_id' in session:
+        return session['organization_id']
+    # Lazy-backfill voor sessies die nog geen organization_id hebben.
+    from database import get_db
+    row = get_db().execute(
+        'SELECT organization_id FROM users WHERE id=?', (session['user_id'],)
+    ).fetchone()
+    org_id = row['organization_id'] if row else None
+    session['organization_id'] = org_id
+    return org_id
+
+
 def is_admin():
     """True als de ingelogde gebruiker een admin is."""
     return session.get('user_role') == 'admin'

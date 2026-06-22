@@ -73,3 +73,6 @@ Thumbs.db
 
 # Local backups
 backups/
+
+# Testbestanden (bevatten studentdocumenten - NOOIT naar de remote)
+testfiles/

@@ -35,6 +35,7 @@
             padding:12px 20px; border-radius:8px; font-weight:600; }
 </style>
 
+{% if not result %}
 <div class="header" style="margin-bottom:20px;">
   <h1>Feedback op een document</h1>
   <p>Kies de rubric van je opleiding en upload het studentdocument. De AI leest het hele
@@ -146,9 +147,17 @@
 </div>
 {% endif %}
 
+{% endif %}{# einde invoerformulier / kostenschatting — verborgen zodra er een resultaat is #}
+
 {% if result %}
+<div class="header" style="margin-bottom:20px;">
+  <h1>Feedback klaar</h1>
+  <p>Opbouwende feedback voor <strong>{{ original_name }}</strong> — geen cijfer of beoordeling.
+     <a href="{{ url_for('holistic_form') }}" style="color:#FFD700; text-decoration:underline;">← Nieuwe analyse</a></p>
+</div>
+
 <div class="holo-card">
-  <h2>2. Formatieve feedback</h2>
+  <h2>Formatieve feedback</h2>
   <p class="holo-hint">Dit is opbouwende feedback om de student te helpen verbeteren — geen cijfer of beoordeling.</p>
   <p style="margin-top:8px;">
     {% if result.product_type %}Producttype: <strong>{{ result.product_type }}</strong> &middot;{% endif %}

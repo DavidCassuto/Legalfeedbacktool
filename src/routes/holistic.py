@@ -186,14 +186,14 @@ def holistic_analyze():
     if not re.fullmatch(r'[0-9a-f]{6,32}', token):
         flash('Ongeldige opdracht. Probeer opnieuw te uploaden.', 'danger')
         return render_template('holistic.html', product_types=PRODUCT_TYPES,
-                               auto_detect=AUTO_DETECT)
+                               auto_detect=AUTO_DETECT, saved_rubrics=_saved_rubrics())
 
     work_dir = _holistic_dir()
     job_path = os.path.join(work_dir, f"{token}_job.json")
     if not os.path.isfile(job_path):
         flash('Opdracht verlopen of niet gevonden. Upload opnieuw.', 'danger')
         return render_template('holistic.html', product_types=PRODUCT_TYPES,
-                               auto_detect=AUTO_DETECT)
+                               auto_detect=AUTO_DETECT, saved_rubrics=_saved_rubrics())
     with open(job_path, encoding='utf-8') as f:
         job = json.load(f)
 
@@ -213,7 +213,7 @@ def holistic_analyze():
         traceback.print_exc()
         flash(f'Analyse mislukt: {e}', 'danger')
         return render_template('holistic.html', product_types=PRODUCT_TYPES,
-                               auto_detect=AUTO_DETECT)
+                               auto_detect=AUTO_DETECT, saved_rubrics=_saved_rubrics())
     finally:
         try:
             os.remove(job_path)
@@ -222,6 +222,7 @@ def holistic_analyze():
 
     return render_template(
         'holistic.html', product_types=PRODUCT_TYPES, auto_detect=AUTO_DETECT,
+        saved_rubrics=_saved_rubrics(),
         result=result, download_name=os.path.basename(result['output_path']),
         original_name=job.get('safe_name', 'document.docx'),
     )

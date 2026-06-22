@@ -170,6 +170,7 @@ def _merge_config(cfg: dict | None) -> dict:
         'toon':             (cfg.get('toon') or d['toon']).strip(),
         'show_suggestions': cfg.get('show_suggestions', True),
         'max_per_categorie': int(cfg.get('max_per_categorie') or DEFAULT_MAX_PER_CATEGORIE),
+        'allow_language_override': bool(cfg.get('allow_language_override')),
     }
 
 

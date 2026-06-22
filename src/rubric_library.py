@@ -87,10 +87,13 @@ def list_rubrics(upload_folder: str, organization_id=_UNSET) -> list[dict]:
             rec_org = _norm_org(rec.get('organization_id'))
             if want_org is not _UNSET and rec_org != want_org:
                 continue
+            fc = rec.get('feedback_config') or {}
             out.append({
                 'id':              rec['id'],
                 'name':            rec.get('name', ''),
                 'organization_id': rec_org,
+                'language':        fc.get('language', 'nl'),
+                'allow_language_override': bool(fc.get('allow_language_override')),
                 'tab_names':       list((rec.get('tabs') or {}).keys()),
                 'has_config':      bool(rec.get('feedback_config')),
                 'created_at':      rec.get('created_at', ''),

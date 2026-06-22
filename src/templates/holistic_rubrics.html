@@ -92,6 +92,12 @@
       <input type="checkbox" name="show_suggestions" value="1" checked> Suggesties tonen (oplossingsrichting meegeven)
     </label>
 
+    <label style="margin-top:12px; font-weight:500;">
+      <input type="checkbox" name="allow_language_override" value="1"> Docent mag de feedback-taal per run wisselen
+    </label>
+    <div class="holo-hint">Uit = de taal hierboven ligt vast. Aan = de docent kan op het
+      analyse-scherm een andere feedback-taal kiezen.</div>
+
     <label style="margin-top:12px;">Max. voorbeelden per categorie</label>
     <input type="number" name="max_per_categorie" min="1" max="50" value="{{ defaults.max_per_categorie }}"
       style="width:120px; padding:8px; border:1px solid #CED4DA; border-radius:8px;">

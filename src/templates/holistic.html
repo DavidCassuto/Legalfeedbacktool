@@ -55,6 +55,40 @@
         <option value="" {% if form and not form.saved_rubric_id %}selected{% endif %}>— anders: zelf een formulier uploaden (zie Geavanceerd) —</option>
       </select>
       <div class="holo-hint">Feedback-taal, criteria en toon zitten al in deze rubric.</div>
+
+      <div id="langOverrideBox" style="display:none; margin-top:12px;">
+        <label for="feedback_language">Feedback-taal voor deze run</label>
+        <select id="feedback_language" name="feedback_language">
+          {% for code, naam in (lang_choices or []) %}
+            <option value="{{ code }}" {% if form and form.feedback_language == code %}selected{% endif %}>{{ naam }}</option>
+          {% endfor %}
+        </select>
+        <div class="holo-hint">Deze rubric staat toe dat je de feedback-taal per run wijzigt.</div>
+      </div>
+
+      <script>
+        const RUBRIC_META = {
+          {% for r in saved_rubrics %}"{{ r.id }}": {override: {{ 'true' if r.allow_language_override else 'false' }}, lang: "{{ r.language }}"}{% if not loop.last %},{% endif %}
+          {% endfor %}
+        };
+        (function () {
+          const sel = document.getElementById('saved_rubric_id');
+          const box = document.getElementById('langOverrideBox');
+          const langSel = document.getElementById('feedback_language');
+          const preset = "{{ form.feedback_language if form else '' }}";
+          function sync() {
+            const meta = RUBRIC_META[sel.value];
+            if (meta && meta.override) {
+              box.style.display = '';
+              if (!preset) langSel.value = meta.lang;
+            } else {
+              box.style.display = 'none';
+            }
+          }
+          sel.addEventListener('change', sync);
+          sync();
+        })();
+      </script>
     {% else %}
       <div class="holo-warnbox">Er is nog geen rubric ingesteld voor jouw opleiding.
         Upload hieronder onder <strong>Geavanceerd</strong> eenmalig het Excel-formulier,

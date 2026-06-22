@@ -110,6 +110,7 @@ def onboarding_step2():
         'toon':               (request.form.get('toon') or '').strip(),
         'show_suggestions':   bool(request.form.get('show_suggestions')),
         'max_per_categorie':  int(request.form.get('max_per_categorie') or 0) or None,
+        'allow_language_override': bool(request.form.get('allow_language_override')),
     }
     name = (request.form.get('name') or '').strip() or os.path.splitext(rubric_file.filename)[0]
 

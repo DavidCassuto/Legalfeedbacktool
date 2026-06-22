@@ -78,7 +78,8 @@ def _org_id_for_save():
 def holistic_form():
     """Toon het uploadformulier."""
     return render_template('holistic.html', product_types=PRODUCT_TYPES,
-                           auto_detect=AUTO_DETECT, saved_rubrics=_saved_rubrics())
+                           auto_detect=AUTO_DETECT, saved_rubrics=_saved_rubrics(),
+                           lang_choices=languages.choices())
 
 
 @login_required
@@ -95,17 +96,20 @@ def holistic_run():
     stijl_enabled = bool(request.form.get('stijl_enabled'))
     ai_enabled = bool(request.form.get('ai_enabled'))
     show_suggestions = bool(request.form.get('show_suggestions'))
+    feedback_language = (request.form.get('feedback_language') or '').strip()
 
     def _form_state():
         return {'rubric_text': rubric_text, 'product_type': product_type,
                 'include_annexes': include_annexes, 'saved_rubric_id': saved_rubric_id,
                 'taal_enabled': taal_enabled, 'stijl_enabled': stijl_enabled,
-                'ai_enabled': ai_enabled, 'show_suggestions': show_suggestions}
+                'ai_enabled': ai_enabled, 'show_suggestions': show_suggestions,
+                'feedback_language': feedback_language}
 
     def _back():
         return render_template('holistic.html', product_types=PRODUCT_TYPES,
                                auto_detect=AUTO_DETECT, form=_form_state(),
-                               saved_rubrics=_saved_rubrics())
+                               saved_rubrics=_saved_rubrics(),
+                               lang_choices=languages.choices())
 
     # Validatie: studentdocument
     if not file or not file.filename:
@@ -159,12 +163,19 @@ def holistic_run():
 
     # Feedback-configuratie: aan/uit + suggesties van dit formulier; instructies/toon
     # uit de opgeslagen rubric (of standaarden).
+    # Feedback-taal: standaard de taal van de rubric. Mag de docent wisselen
+    # (instelling op de rubric), dan telt de keuze van dit formulier.
+    run_language = saved_cfg.get('language', 'nl')
+    if saved_cfg.get('allow_language_override') and feedback_language:
+        run_language = languages.normalize(feedback_language)
+
     feedback_config = {
         'taal_enabled':      taal_enabled,
         'stijl_enabled':     stijl_enabled,
         'ai_enabled':        ai_enabled,
         'show_suggestions':  show_suggestions,
-        'language':          saved_cfg.get('language', 'nl'),
+        'language':          run_language,
+        'allow_language_override': bool(saved_cfg.get('allow_language_override')),
         'inhoud_criteria':   saved_cfg.get('inhoud_criteria', ''),
         'onderwijs_criteria': saved_cfg.get('onderwijs_criteria', ''),
         'taal_instructies':  saved_cfg.get('taal_instructies', ''),
@@ -200,6 +211,7 @@ def holistic_run():
     return render_template(
         'holistic.html', product_types=PRODUCT_TYPES, auto_detect=AUTO_DETECT,
         saved_rubrics=_saved_rubrics(), form=_form_state(),
+        lang_choices=languages.choices(),
         estimate=estimate, job_token=token, original_name=safe_name,
     )
 
@@ -299,6 +311,7 @@ def holistic_rubric_add():
         'toon':              (request.form.get('toon') or '').strip(),
         'show_suggestions':  bool(request.form.get('show_suggestions')),
         'max_per_categorie': int(request.form.get('max_per_categorie') or 0) or None,
+        'allow_language_override': bool(request.form.get('allow_language_override')),
     }
     rubric_file = request.files.get('rubric_file')
     if not rubric_file or not rubric_file.filename:
@@ -359,6 +372,7 @@ def holistic_rubric_update(rubric_id):
         'toon':              (request.form.get('toon') or '').strip(),
         'show_suggestions':  bool(request.form.get('show_suggestions')),
         'max_per_categorie': int(request.form.get('max_per_categorie') or 0) or None,
+        'allow_language_override': bool(request.form.get('allow_language_override')),
     }
     update_kwargs = {'name': request.form.get('name'), 'feedback_config': feedback_config}
     # Alleen een beheerder mag de klant-koppeling wijzigen.

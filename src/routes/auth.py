@@ -11,7 +11,7 @@ from auth import login_required, is_admin
 def login():
     """Login pagina."""
     if 'user_id' in session:
-        return redirect(url_for('upload_document'))
+        return redirect(url_for('holistic_form'))
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -33,7 +33,7 @@ def login():
             if user['role'] == 'admin':
                 return redirect(url_for('index'))
             else:
-                return redirect(url_for('upload_document'))
+                return redirect(url_for('holistic_form'))
         else:
             flash('Ongeldige gebruikersnaam of wachtwoord.', 'danger')
 
@@ -51,7 +51,7 @@ def logout():
 def index():
     """Welkomstpagina van de applicatie."""
     if not is_admin():
-        return redirect(url_for('upload_document'))
+        return redirect(url_for('holistic_form'))
     return render_template('index.html')
 
 

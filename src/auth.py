@@ -29,7 +29,7 @@ def admin_required(f):
             return redirect(url_for('login'))
         if session.get('user_role') != 'admin':
             flash('Geen toegang. Alleen beheerders kunnen dit bekijken.', 'danger')
-            return redirect(url_for('upload_document'))
+            return redirect(url_for('holistic_form'))
         return f(*args, **kwargs)
     return decorated
 

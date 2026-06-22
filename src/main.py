@@ -113,27 +113,6 @@ def inject_global_data():
 
 # ── Route-functies importeren ─────────────────────────────────────────────────
 from routes.auth import login, logout, index, demo_loader
-from routes.documents import (
-    upload_document, api_upload_document, list_documents,
-    analysis_status_api, document_analysis, export_document, export_select,
-    reanalyze_partial, reanalyze_document,
-)
-from routes.criteria import (
-    list_criteria, add_criterion, edit_criterion, delete_criterion,
-    map_criteria_to_sections,
-    list_criteria_templates, add_criteria_template,
-    list_document_type_criteria, add_criteria_to_document_type,
-    edit_criteria_instance, delete_criteria_instance,
-)
-from routes.sections import (
-    list_sections, add_section, edit_section, delete_section,
-)
-from routes.document_types import (
-    list_document_types, add_document_type, edit_document_type, delete_document_type,
-    list_organization_document_types, add_organization_document_type,
-    manage_document_type_sections, add_section_to_document_type,
-    remove_section_from_document_type,
-)
 from routes.organizations import (
     list_organizations, add_organization, edit_organization, delete_organization,
 )
@@ -157,50 +136,6 @@ R('/login',   'login',   login,   methods=['GET', 'POST'])
 R('/logout',  'logout',  logout)
 R('/',        'index',   index)
 R('/demo_loader', 'demo_loader', demo_loader)
-
-# Documenten
-R('/upload',                              'upload_document',    upload_document,    methods=['GET', 'POST'])
-R('/api/upload',                          'api_upload_document', api_upload_document, methods=['POST'])
-R('/documents',                           'list_documents',     list_documents)
-R('/api/analysis/<int:document_id>/status', 'analysis_status_api', analysis_status_api)
-R('/analysis/<int:document_id>',          'document_analysis',  document_analysis)
-R('/documents/<int:document_id>/export',            'export_document',   export_document)
-R('/documents/<int:document_id>/export-select',    'export_select',     export_select,     methods=['GET', 'POST'])
-R('/documents/<int:document_id>/reanalyze',        'reanalyze_document', reanalyze_document)
-R('/documents/<int:document_id>/reanalyze-partial','reanalyze_partial',  reanalyze_partial, methods=['POST'])
-
-# Criteria
-R('/criteria',                          'list_criteria',         list_criteria)
-R('/criteria/add',                      'add_criterion',         add_criterion,        methods=['GET', 'POST'])
-R('/criteria/edit/<int:id>',            'edit_criterion',        edit_criterion,       methods=['GET', 'POST'])
-R('/criteria/delete/<int:id>',          'delete_criterion',      delete_criterion,     methods=['POST'])
-R('/criteria/<int:id>/map_sections',    'map_criteria_to_sections', map_criteria_to_sections, methods=['GET', 'POST'])
-R('/criteria_templates',                'list_criteria_templates',  list_criteria_templates)
-R('/criteria_templates/add',            'add_criteria_template',    add_criteria_template, methods=['GET', 'POST'])
-
-# Criteria instances (gekoppeld aan document type)
-R('/document_types/<int:doc_type_id>/criteria',     'list_document_type_criteria',   list_document_type_criteria)
-R('/document_types/<int:doc_type_id>/criteria/add', 'add_criteria_to_document_type', add_criteria_to_document_type, methods=['GET', 'POST'])
-R('/criteria_instances/<int:instance_id>/edit',     'edit_criteria_instance',         edit_criteria_instance,        methods=['GET', 'POST'])
-R('/criteria_instances/<int:instance_id>/delete',   'delete_criteria_instance',       delete_criteria_instance,      methods=['POST'])
-
-# Secties
-R('/sections',              'list_sections', list_sections)
-R('/sections/add',          'add_section',   add_section,   methods=['GET', 'POST'])
-R('/sections/edit/<int:id>', 'edit_section',  edit_section,  methods=['GET', 'POST'])
-R('/sections/delete/<int:id>', 'delete_section', delete_section, methods=['POST'])
-
-# Document types
-R('/document_types',                     'list_document_types',  list_document_types)
-R('/document_types/add',                 'add_document_type',    add_document_type,   methods=['GET', 'POST'])
-R('/document_types/edit/<int:id>',       'edit_document_type',   edit_document_type,  methods=['GET', 'POST'])
-R('/document_types/delete/<int:id>',     'delete_document_type', delete_document_type, methods=['POST'])
-R('/document_types/organization/<int:org_id>',      'list_organization_document_types',  list_organization_document_types)
-R('/document_types/organization/<int:org_id>/add',  'add_organization_document_type',    add_organization_document_type, methods=['GET', 'POST'])
-R('/document_types/<int:doc_type_id>/sections/manage', 'manage_document_type_sections',  manage_document_type_sections)
-R('/document_types/<int:doc_type_id>/sections/add',    'add_section_to_document_type',   add_section_to_document_type,  methods=['POST'])
-R('/document_types/<int:doc_type_id>/sections/<int:section_id>/remove',
-  'remove_section_from_document_type', remove_section_from_document_type, methods=['POST'])
 
 # Organisaties
 R('/organizations',              'list_organizations', list_organizations)

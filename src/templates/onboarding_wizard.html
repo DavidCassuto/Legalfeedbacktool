@@ -52,25 +52,13 @@
   }
   .toggle-btn.active { border-color: #4D908E; background: rgba(77,144,142,0.08); color: #4D908E; }
 
-  /* Sectie-checkboxes */
-  .section-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 10px; margin-bottom: 24px;
+  .wz-input, .wz-textarea, .wz-select {
+    width: 100%; padding: 10px; border: 1px solid #CED4DA; border-radius: 8px;
+    font-family: inherit; font-size: 0.95em;
   }
-  .section-check {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 14px; border: 2px solid #E9ECEF; border-radius: 8px;
-    cursor: pointer; transition: all 0.2s; user-select: none;
-  }
-  .section-check:hover { border-color: #4D908E; }
-  .section-check.checked { border-color: #4D908E; background: rgba(77,144,142,0.08); }
-  .section-check input[type=checkbox] { accent-color: #4D908E; width: 16px; height: 16px; }
-
-  /* Niveau badge */
-  .lvl-badge {
-    font-size: 0.7em; padding: 2px 6px; border-radius: 4px;
-    background: #E9ECEF; color: #6C757D; margin-left: auto; white-space: nowrap;
-  }
+  .wz-textarea { min-height: 120px; resize: vertical; }
+  .wz-hint { color: #6C757D; font-size: 0.86em; margin-top: 4px; }
+  .wz-check { display: block; font-weight: 500; margin-top: 8px; }
 
   /* Uitnodigingslink */
   .invite-box {
@@ -99,7 +87,7 @@
     display: flex; align-items: baseline; gap: 10px;
     padding: 10px 0; border-bottom: 1px solid #F0F0F0;
   }
-  .summary-label { font-weight: 600; min-width: 140px; color: #52796F; }
+  .summary-label { font-weight: 600; min-width: 160px; color: #52796F; }
   .summary-value { color: #2B2D42; }
 
   /* Done scherm */
@@ -114,7 +102,7 @@
     <!-- Progress bar -->
     <div class="progress-bar-wrap">
       <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
-      {% set labels = ['Organisatie','Documenttype','Secties','Docent','Klaar'] %}
+      {% set labels = ['Organisatie','Taal & criteria','Rubric','Docent','Klaar'] %}
       {% for i in range(1,6) %}
       <div class="step-item">
         <div class="step-dot" id="dot{{ i }}">{{ i }}</div>
@@ -126,7 +114,7 @@
     <!-- ── Stap 1: Organisatie ── -->
     <div class="step active" id="step1">
       <div class="step-title">Stap 1 — Organisatie</div>
-      <div class="step-subtitle">Maak een nieuwe organisatie aan of kies een bestaande.</div>
+      <div class="step-subtitle">Maak een nieuwe klant aan of kies een bestaande.</div>
 
       <div class="toggle-group">
         <button class="toggle-btn active" id="btnNew1" onclick="setMode('new')">+ Nieuwe organisatie</button>
@@ -136,18 +124,18 @@
       <div id="newOrgForm">
         <div class="form-group">
           <label>Naam organisatie *</label>
-          <input type="text" id="orgName" placeholder="bijv. Hogeschool Utrecht">
+          <input type="text" id="orgName" class="wz-input" placeholder="bijv. Hogeschool Inholland — Economie">
         </div>
         <div class="form-group">
           <label>Beschrijving (optioneel)</label>
-          <input type="text" id="orgDesc" placeholder="bijv. HBO-instelling, opleiding Bedrijfskunde">
+          <input type="text" id="orgDesc" class="wz-input" placeholder="bijv. HBO, opleiding Bedrijfseconomie">
         </div>
       </div>
 
       <div id="existingOrgForm" style="display:none">
         <div class="form-group">
           <label>Selecteer organisatie *</label>
-          <select id="orgSelect">
+          <select id="orgSelect" class="wz-select">
             <option value="">-- Kies organisatie --</option>
             {% for org in organizations %}
             <option value="{{ org.id }}">{{ org.name }}</option>
@@ -162,18 +150,41 @@
       </div>
     </div>
 
-    <!-- ── Stap 2: Documenttype ── -->
+    <!-- ── Stap 2: Taal & criteria ── -->
     <div class="step" id="step2">
-      <div class="step-title">Stap 2 — Documenttype</div>
-      <div class="step-subtitle">Wat voor soort documenten gaan studenten inleveren?</div>
+      <div class="step-title">Stap 2 — Taal &amp; criteria</div>
+      <div class="step-subtitle">Kies de feedback-taal. De standaardcriteria van die taal worden
+        ingevuld — je mag ze laten staan of aanpassen.</div>
 
       <div class="form-group">
-        <label>Naam documenttype *</label>
-        <input type="text" id="dtName" placeholder="bijv. Stageverslag, Onderzoeksrapport, Scriptie">
+        <label>Taal van de feedback *</label>
+        <select id="language" class="wz-select" onchange="applyLangDefaults()">
+          {% for code, naam in lang_choices %}<option value="{{ code }}">{{ naam }}</option>{% endfor %}
+        </select>
       </div>
+
       <div class="form-group">
-        <label>Beschrijving (optioneel)</label>
-        <input type="text" id="dtDesc" placeholder="bijv. MBO niveau 4, opleiding Zorg & Welzijn">
+        <label>Extra inhoudelijke criteria</label>
+        <textarea id="inhoudCriteria" class="wz-textarea"></textarea>
+        <div class="wz-hint">Bovenop de rubriek; beoordeeld in samenhang met het hele document.</div>
+      </div>
+
+      <div class="form-group">
+        <label>Toon van de feedback</label>
+        <textarea id="toon" class="wz-textarea" style="min-height:80px;"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Soorten feedback</label>
+        <label class="wz-check"><input type="checkbox" id="taalEnabled" checked> Taalfouten markeren</label>
+        <label class="wz-check"><input type="checkbox" id="stijlEnabled" checked> Schrijfkwaliteit (als comment)</label>
+        <label class="wz-check"><input type="checkbox" id="aiEnabled" checked> AI-stijldetectie (als comment)</label>
+        <label class="wz-check"><input type="checkbox" id="showSuggestions" checked> Suggesties tonen</label>
+      </div>
+
+      <div class="form-group">
+        <label>Max. voorbeelden per categorie</label>
+        <input type="number" id="maxPer" class="wz-input" style="width:120px;" min="1" max="50" value="{{ default_max }}">
       </div>
 
       <div class="wizard-nav">
@@ -182,26 +193,24 @@
       </div>
     </div>
 
-    <!-- ── Stap 3: Secties ── -->
+    <!-- ── Stap 3: Rubric ── -->
     <div class="step" id="step3">
-      <div class="step-title">Stap 3 — Secties</div>
-      <div class="step-subtitle">Welke secties moeten studenten in hun document opnemen? Kies er minimaal 2.</div>
+      <div class="step-title">Stap 3 — Rubric</div>
+      <div class="step-subtitle">Upload het Excel-beoordelingsformulier van de opleiding. De
+        rubriek-tekst wordt automatisch uit alle tabbladen (beroepsproducten) gehaald.</div>
 
-      <div class="section-grid" id="sectionGrid">
-        {% for sec in sections %}
-        <label class="section-check" id="sec-label-{{ sec.id }}">
-          <input type="checkbox" value="{{ sec.id }}" class="sec-cb" onchange="toggleSectionStyle({{ sec.id }})">
-          <span>{{ sec.name }}</span>
-          {% if sec.level %}
-          <span class="lvl-badge">H{{ sec.level }}</span>
-          {% endif %}
-        </label>
-        {% endfor %}
+      <div class="form-group">
+        <label>Beoordelingsformulier (.xlsx) *</label>
+        <input type="file" id="rubricFile" class="wz-input" accept=".xlsx,.xlsm">
+      </div>
+      <div class="form-group">
+        <label>Naam van de rubric (optioneel)</label>
+        <input type="text" id="rubricName" class="wz-input" placeholder="Leeg = bestandsnaam">
       </div>
 
       <div class="wizard-nav">
         <button class="btn btn-prev" onclick="goTo(2)">← Terug</button>
-        <button class="btn" onclick="saveStep3()">Volgende &rarr;</button>
+        <button class="btn" id="btnSaveRubric" onclick="saveStep3()">Rubric opslaan &rarr;</button>
       </div>
     </div>
 
@@ -212,7 +221,7 @@
 
       <div class="form-group">
         <label>Naam docent (optioneel — wordt vooringevuld in het formulier)</label>
-        <input type="text" id="teacherName" placeholder="bijv. M. Jansen">
+        <input type="text" id="teacherName" class="wz-input" placeholder="bijv. M. Jansen">
       </div>
 
       <button class="btn" onclick="generateInvite()">Uitnodigingslink genereren</button>
@@ -257,9 +266,10 @@
 <script>
 const STEPS = 5;
 let currentStep = 1;
-let orgId = null, orgName = '', dtId = null, dtName = '', sectionCount = 0, inviteUrl = '';
+let orgId = null, orgName = '', langLabel = '', rubricName = '', rubricTabs = 0, inviteUrl = '';
 let mode1 = 'new';
 
+const DEFAULTS = {{ defaults_by_lang|tojson }};
 const progressPct = [0, 0, 25, 50, 75, 100];
 
 function goTo(n) {
@@ -287,13 +297,14 @@ function setMode(m) {
   document.getElementById('existingOrgForm').style.display = m === 'existing' ? '' : 'none';
 }
 
-function toggleSectionStyle(id) {
-  const cb = document.querySelector('.sec-cb[value="' + id + '"]');
-  const lbl = document.getElementById('sec-label-' + id);
-  lbl.classList.toggle('checked', cb.checked);
+function applyLangDefaults() {
+  const lang = document.getElementById('language').value;
+  const d = DEFAULTS[lang] || {inhoud:'', toon:''};
+  document.getElementById('inhoudCriteria').value = d.inhoud || '';
+  document.getElementById('toon').value = d.toon || '';
 }
 
-async function post(url, body) {
+async function postJSON(url, body) {
   const r = await fetch(url, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -313,36 +324,56 @@ async function saveStep1() {
     if (!name) return alert('Naam is verplicht.');
     body = { mode: 'new', name, description: document.getElementById('orgDesc').value.trim() };
   }
-  const data = await post('/onboarding/step/1', body);
+  const data = await postJSON('/onboarding/step/1', body);
   if (!data.ok) return alert(data.error);
   orgId = data.org_id;
   orgName = data.org_name;
+  applyLangDefaults();   // criteria voorvullen voor de standaardtaal
   goTo(2);
 }
 
-async function saveStep2() {
-  const name = document.getElementById('dtName').value.trim();
-  if (!name) return alert('Naam is verplicht.');
-  const data = await post('/onboarding/step/2', {
-    name, description: document.getElementById('dtDesc').value.trim(), org_id: orgId
-  });
-  if (!data.ok) return alert(data.error);
-  dtId = data.doc_type_id;
-  dtName = data.doc_type_name;
+function saveStep2() {
+  // Geen serveraanroep: de waarden worden meegestuurd wanneer de rubric wordt opgeslagen.
+  const sel = document.getElementById('language');
+  langLabel = sel.options[sel.selectedIndex].text;
   goTo(3);
 }
 
 async function saveStep3() {
-  const ids = Array.from(document.querySelectorAll('.sec-cb:checked')).map(cb => parseInt(cb.value));
-  if (ids.length < 2) return alert('Selecteer minimaal 2 secties.');
-  const data = await post('/onboarding/step/3', { doc_type_id: dtId, section_ids: ids });
-  if (!data.ok) return alert(data.error);
-  sectionCount = ids.length;
-  goTo(4);
+  const fileInput = document.getElementById('rubricFile');
+  if (!fileInput.files.length) return alert('Selecteer een Excel-bestand (.xlsx).');
+
+  const fd = new FormData();
+  fd.append('org_id', orgId);
+  fd.append('name', document.getElementById('rubricName').value.trim());
+  fd.append('language', document.getElementById('language').value);
+  fd.append('inhoud_criteria', document.getElementById('inhoudCriteria').value);
+  fd.append('toon', document.getElementById('toon').value);
+  if (document.getElementById('taalEnabled').checked)     fd.append('taal_enabled', '1');
+  if (document.getElementById('stijlEnabled').checked)    fd.append('stijl_enabled', '1');
+  if (document.getElementById('aiEnabled').checked)       fd.append('ai_enabled', '1');
+  if (document.getElementById('showSuggestions').checked) fd.append('show_suggestions', '1');
+  fd.append('max_per_categorie', document.getElementById('maxPer').value);
+  fd.append('rubric_file', fileInput.files[0]);
+
+  const btn = document.getElementById('btnSaveRubric');
+  btn.disabled = true; btn.textContent = 'Bezig met opslaan…';
+  try {
+    const r = await fetch('/onboarding/step/2', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!data.ok) { alert(data.error); return; }
+    rubricName = data.rubric_name;
+    rubricTabs = data.tab_count;
+    goTo(4);
+  } catch (e) {
+    alert('Opslaan mislukt: ' + e);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Rubric opslaan →';
+  }
 }
 
 async function generateInvite() {
-  const data = await post('/onboarding/step/4', {
+  const data = await postJSON('/onboarding/step/4', {
     full_name: document.getElementById('teacherName').value.trim(),
     org_id: orgId
   });
@@ -366,8 +397,8 @@ document.getElementById('btnNext4').addEventListener('click', buildSummary);
 function buildSummary() {
   const rows = [
     ['Organisatie', orgName],
-    ['Documenttype', dtName],
-    ['Secties gekoppeld', sectionCount + ' secties'],
+    ['Feedback-taal', langLabel],
+    ['Rubric', rubricName ? `${rubricName} (${rubricTabs} beroepsproduct(en))` : '—'],
     ['Uitnodigingslink', inviteUrl ? 'Aangemaakt' : 'Overgeslagen'],
   ];
   document.getElementById('summary').innerHTML = rows.map(([label, val]) =>

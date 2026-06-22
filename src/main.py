@@ -119,7 +119,7 @@ from routes.organizations import (
 from routes.users import list_users, add_user, edit_user, delete_user
 from routes.onboarding import (
     onboarding_wizard, onboarding_step1, onboarding_step2,
-    onboarding_step3, onboarding_step4, invite_accept, welcome,
+    onboarding_step4, invite_accept, welcome,
 )
 from routes.misc import performance_stats
 from routes.holistic import (
@@ -153,7 +153,6 @@ R('/users/delete/<int:id>', 'delete_user', delete_user, methods=['POST'])
 R('/onboarding',          'onboarding_wizard', onboarding_wizard)
 R('/onboarding/step/1',   'onboarding_step1',  onboarding_step1,  methods=['POST'])
 R('/onboarding/step/2',   'onboarding_step2',  onboarding_step2,  methods=['POST'])
-R('/onboarding/step/3',   'onboarding_step3',  onboarding_step3,  methods=['POST'])
 R('/onboarding/step/4',   'onboarding_step4',  onboarding_step4,  methods=['POST'])
 R('/invite/<token>',      'invite_accept',     invite_accept,     methods=['GET', 'POST'])
 R('/welcome',             'welcome',           welcome)

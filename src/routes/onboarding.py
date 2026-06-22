@@ -1,28 +1,47 @@
 # src/routes/onboarding.py
 """Onboarding wizard + uitnodigingssysteem voor nieuwe docenten."""
 
+import os
+import uuid
 import secrets
 import re
 from datetime import datetime, timedelta
 
-from flask import render_template, request, redirect, url_for, flash, session, jsonify
+from flask import (
+    render_template, request, redirect, url_for, flash, session, jsonify, current_app,
+)
 from werkzeug.security import generate_password_hash
+from werkzeug.utils import secure_filename
 
 from database import get_db
 from auth import admin_required, login_required
+import rubric_library
+import holistic_analysis
+import languages
 
 
 # ── Wizard ────────────────────────────────────────────────────────────────────
 
 @admin_required
 def onboarding_wizard():
-    """Stap-voor-stap wizard voor het aanmaken van een nieuwe klant."""
+    """Stap-voor-stap wizard voor het opzetten van een nieuwe klant:
+    organisatie -> taal & criteria -> rubric -> docent uitnodigen."""
     db = get_db()
-    sections = db.execute(
-        'SELECT id, name, identifier, level FROM sections ORDER BY order_index, name'
-    ).fetchall()
     organizations = db.execute('SELECT id, name FROM organizations ORDER BY name').fetchall()
-    return render_template('onboarding_wizard.html', sections=sections, organizations=organizations)
+    # Standaardcriteria per taal, zodat stap 2 ze kan voorvullen en bij taalwissel verversen.
+    defaults_by_lang = {
+        lang: {
+            'inhoud': d.get('inhoud', ''), 'toon': d.get('toon', ''),
+        }
+        for lang, d in holistic_analysis.DEFAULTS_BY_LANG.items()
+    }
+    return render_template(
+        'onboarding_wizard.html',
+        organizations=organizations,
+        lang_choices=languages.choices(),
+        defaults_by_lang=defaults_by_lang,
+        default_max=holistic_analysis.DEFAULT_MAX_PER_CATEGORIE,
+    )
 
 
 @admin_required
@@ -64,58 +83,54 @@ def onboarding_step1():
 
 @admin_required
 def onboarding_step2():
-    """Stap 2: Documenttype aanmaken."""
-    data = request.get_json()
-    name = (data.get('name') or '').strip()
-    description = (data.get('description') or '').strip()
-    org_id = data.get('org_id')
+    """Stap 2+3 (samengevoegd): rubric uploaden + feedback-instellingen opslaan
+    als rubric, gekoppeld aan de klant. Ontvangt multipart/form-data (Excel-bestand)."""
+    org_id = request.form.get('org_id')
+    if not org_id:
+        return jsonify({'ok': False, 'error': 'Organisatie ontbreekt.'})
 
-    if not name:
-        return jsonify({'ok': False, 'error': 'Naam is verplicht.'})
+    rubric_file = request.files.get('rubric_file')
+    if not rubric_file or not rubric_file.filename:
+        return jsonify({'ok': False, 'error': 'Selecteer een Excel-beoordelingsformulier (.xlsx).'})
+    if not rubric_file.filename.lower().endswith(('.xlsx', '.xlsm')):
+        return jsonify({'ok': False, 'error': 'Het beoordelingsformulier moet een Excel-bestand zijn (.xlsx).'})
 
-    # Genereer identifier uit naam
-    identifier = re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')
+    # Tekstvelden die in de wizard niet getoond worden blijven leeg -> bij analyse
+    # vult _merge_config ze met de standaardcriteria van de gekozen taal.
+    feedback_config = {
+        'language':           (request.form.get('language') or 'nl').strip(),
+        'inhoud_criteria':    (request.form.get('inhoud_criteria') or '').strip(),
+        'onderwijs_criteria': '',
+        'taal_enabled':       bool(request.form.get('taal_enabled')),
+        'taal_instructies':   '',
+        'stijl_enabled':      bool(request.form.get('stijl_enabled')),
+        'stijl_instructies':  '',
+        'ai_enabled':         bool(request.form.get('ai_enabled')),
+        'ai_instructies':     '',
+        'toon':               (request.form.get('toon') or '').strip(),
+        'show_suggestions':   bool(request.form.get('show_suggestions')),
+        'max_per_categorie':  int(request.form.get('max_per_categorie') or 0) or None,
+    }
+    name = (request.form.get('name') or '').strip() or os.path.splitext(rubric_file.filename)[0]
 
-    db = get_db()
+    upload_folder = current_app.config['UPLOAD_FOLDER']
+    work = os.path.join(upload_folder, 'holistic')
+    os.makedirs(work, exist_ok=True)
+    tmp = os.path.join(work, f"tmp_{uuid.uuid4().hex[:8]}_{secure_filename(rubric_file.filename)}")
+    rubric_file.save(tmp)
     try:
-        cursor = db.execute(
-            'INSERT INTO document_types (name, identifier, description, organization_id) VALUES (?, ?, ?, ?)',
-            (name, identifier, description or None, org_id or None)
-        )
-        db.commit()
-        return jsonify({'ok': True, 'doc_type_id': cursor.lastrowid, 'doc_type_name': name})
+        rec = rubric_library.save_rubric(
+            upload_folder, name, tmp,
+            feedback_config=feedback_config, organization_id=org_id)
+        return jsonify({'ok': True, 'rubric_id': rec['id'], 'rubric_name': rec['name'],
+                        'tab_count': len(rec['tabs'])})
     except Exception as e:
-        if 'UNIQUE' in str(e):
-            dt = db.execute('SELECT id, name FROM document_types WHERE name=?', (name,)).fetchone()
-            # Zorg dat organization_id ook bijgewerkt wordt als het documenttype al bestond
-            if org_id:
-                db.execute('UPDATE document_types SET organization_id=? WHERE id=?', (org_id, dt['id']))
-                db.commit()
-            return jsonify({'ok': True, 'doc_type_id': dt['id'], 'doc_type_name': dt['name'], 'existing': True})
         return jsonify({'ok': False, 'error': str(e)})
-
-
-@admin_required
-def onboarding_step3():
-    """Stap 3: Secties koppelen aan documenttype."""
-    data = request.get_json()
-    doc_type_id = data.get('doc_type_id')
-    section_ids = data.get('section_ids', [])
-
-    if not doc_type_id:
-        return jsonify({'ok': False, 'error': 'Documenttype ontbreekt.'})
-
-    db = get_db()
-    # Verwijder bestaande koppelingen voor dit documenttype
-    db.execute('DELETE FROM document_type_sections WHERE document_type_id=?', (doc_type_id,))
-
-    for idx, sec_id in enumerate(section_ids):
-        db.execute(
-            'INSERT OR IGNORE INTO document_type_sections (document_type_id, section_id, order_index) VALUES (?,?,?)',
-            (doc_type_id, sec_id, idx)
-        )
-    db.commit()
-    return jsonify({'ok': True, 'count': len(section_ids)})
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
 
 
 @admin_required

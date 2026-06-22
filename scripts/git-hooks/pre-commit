@@ -1,0 +1,23 @@
+#!/bin/sh
+# Pre-commit hook: blokkeer het committen van documenten/databestanden.
+# Deze repo is PUBLIEK; documenten (studentscripties, rapporten, sheets, exports)
+# mogen er nooit in terechtkomen (AVG / vertrouwelijkheid).
+#
+# Installatie (eenmalig, per kloon):
+#     git config core.hooksPath scripts/git-hooks
+# Noodgeval-bypass (bewust):  git commit --no-verify
+
+blocked=$(git diff --cached --name-only --diff-filter=AM \
+  | grep -iE '\.(docx?|pdf|xlsx?|xlsm|pptx?|csv)$|(^|/)~\$')
+
+if [ -n "$blocked" ]; then
+  echo "" >&2
+  echo "GEBLOKKEERD: documenten/databestanden horen niet in deze publieke repo:" >&2
+  echo "$blocked" | sed 's/^/   - /' >&2
+  echo "" >&2
+  echo "Haal ze uit de staging:  git restore --staged <bestand>" >&2
+  echo "Indien echt bedoeld:     git commit --no-verify" >&2
+  echo "" >&2
+  exit 1
+fi
+exit 0

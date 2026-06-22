@@ -76,3 +76,16 @@ backups/
 
 # Testbestanden (bevatten studentdocumenten - NOOIT naar de remote)
 testfiles/
+
+# Documenten en data horen NOOIT in deze publieke repo.
+# (Ook afgedwongen via de pre-commit hook in scripts/git-hooks/pre-commit.)
+*.doc
+*.docx
+*.pdf
+*.xls
+*.xlsx
+*.xlsm
+*.ppt
+*.pptx
+*.csv
+~$*

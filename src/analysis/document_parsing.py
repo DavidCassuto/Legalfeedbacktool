@@ -70,6 +70,39 @@ def parse_document(file_path: str, mark_objects: bool = False) -> tuple[str, lis
         # Reset current_char_offset voor docx, want full_text wordt hier opgebouwd
         current_char_offset = 0
 
+        # Voetnoot-/eindnoottekst per id inlezen, zodat we de noot INLINE aan de
+        # juiste alinea kunnen koppelen (python-docx neemt de footnoteReference niet
+        # mee in para.text, waardoor het model citaten anders niet ziet).
+        _WNS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+        _fn_text = {}
+        try:
+            import zipfile as _zf_mod
+            from lxml import etree as _etree
+            with _zf_mod.ZipFile(file_path, 'r') as _zf:
+                for _xml, _tag in (('word/footnotes.xml', 'footnote'), ('word/endnotes.xml', 'endnote')):
+                    if _xml not in _zf.namelist():
+                        continue
+                    _root = _etree.fromstring(_zf.read(_xml))
+                    for _node in _root.findall(f'{{{_WNS}}}{_tag}'):
+                        if _node.get(f'{{{_WNS}}}type', 'normal') != 'normal':
+                            continue
+                        _fid = _node.get(f'{{{_WNS}}}id')
+                        _txt = ''.join(t.text for t in _node.findall(f'.//{{{_WNS}}}t') if t.text).strip()
+                        if _fid is not None and _txt:
+                            _fn_text[_fid] = _txt
+        except Exception:
+            _fn_text = {}
+
+        def _voetnoten_in_para(para):
+            """Geef de voetnoot-/eindnoottekst(en) waarnaar deze paragraaf verwijst, in volgorde."""
+            uit = []
+            for el in para._p.iter():
+                if el.tag.endswith('}footnoteReference') or el.tag.endswith('}endnoteReference'):
+                    rid = el.get(f'{{{_WNS}}}id')
+                    if rid in _fn_text:
+                        uit.append(_fn_text[rid])
+            return uit
+
         # Helper: detecteer een figuur/afbeelding in een paragraaf en geef een marker
         def _figure_marker(para):
             from docx.oxml.ns import qn
@@ -92,6 +125,11 @@ def parse_document(file_path: str, mark_objects: bool = False) -> tuple[str, lis
                 fm = _figure_marker(para)
                 if fm:
                     para_text = (para_text.rstrip() + ' ' + fm) if para_text.strip() else fm
+            # Voetnoten/eindnoten inline aan deze alinea hangen (de student heeft hier
+            # dus wél een bronverwijzing) zodat het model de citatie ziet.
+            _vn = _voetnoten_in_para(para)
+            if _vn:
+                para_text = para_text.rstrip() + ' ' + ' '.join(f'[voetnoot: {t}]' for t in _vn)
             paragraphs.append(para_text.strip())
 
             style_name = para.style.name if para.style else 'Normal'
@@ -167,37 +205,8 @@ def parse_document(file_path: str, mark_objects: bool = False) -> tuple[str, lis
             elif tag == 'tbl':
                 _verwerk_tabel(DocxTable(kind, doc))
 
-        # Voetnoten uitlezen via directe ZIP/XML-toegang
-        # (python-docx biedt geen footnotes_part attribuut)
-        try:
-            import zipfile
-            from lxml import etree as _etree
-            WNS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
-            voetnoten = []
-            with zipfile.ZipFile(file_path, 'r') as zf:
-                for xml_naam in ('word/footnotes.xml', 'word/endnotes.xml'):
-                    if xml_naam not in zf.namelist():
-                        continue
-                    root = _etree.fromstring(zf.read(xml_naam))
-                    label = 'Voetnoot' if 'footnote' in xml_naam else 'Eindnoot'
-                    teller = 1
-                    for node in root.findall(f'{{{WNS}}}footnote') + root.findall(f'{{{WNS}}}endnote'):
-                        # Sla separator/continuation-noten over op basis van type, niet id
-                        fn_type = node.get(f'{{{WNS}}}type', 'normal')
-                        if fn_type != 'normal':
-                            continue
-                        tekst_delen = [t.text for t in node.findall(f'.//{{{WNS}}}t') if t.text]
-                        fn_tekst = ''.join(tekst_delen).strip()
-                        if fn_tekst:
-                            voetnoten.append(f'[{label} {teller}] {fn_tekst}')
-                            teller += 1
-            if voetnoten:
-                blok = '[VOETNOTEN/EINDNOTEN]\n' + '\n'.join(voetnoten) + '\n[/VOETNOTEN/EINDNOTEN]'
-                full_text += '\n\n' + blok + '\n\n'
-                paragraphs.append(blok)
-                current_char_offset += len(blok) + 4
-        except Exception:
-            pass  # Geen voetnoten of niet toegankelijk — geen probleem
+        # (Voetnoten/eindnoten worden nu INLINE per alinea gekoppeld in _verwerk_para,
+        #  i.p.v. als los blok aan het eind — zo ziet het model de citatie op de juiste plek.)
 
     else:
         print(f"Fout: Ongeldig bestandstype '{file_path}'. Alleen .txt en .docx worden ondersteund.")

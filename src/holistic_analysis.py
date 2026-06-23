@@ -57,14 +57,17 @@ _NL_TAALGEBRUIK = (
 DEFAULT_INHOUD_CRITERIA = (
     "Beoordeel elk onderdeel in samenhang met het HELE document; de deelvragen, methode e.d. "
     "staan mogelijk in een ander hoofdstuk en mag je daarbij betrekken.\n"
-    "- Zijn de deelvragen onderling én ten opzichte van de hoofdvraag voldoende onderscheidend "
-    "(geen overlap; elke deelvraag is een eigen bouwsteen voor de hoofdvraag)?\n"
+    "- Zijn de deelvragen onderling onderscheidend (geen overlap) en dekken ze SAMEN de hoofdvraag? "
+    "Een louter BESCHRIJVENDE deelvraag is prima als logische bouwsteen — eis NIET dat elke "
+    "deelvraag de koppeling aan de hoofdvraag in haar eigen formulering herhaalt; die koppeling mag "
+    "in de hoofdvraag en de evaluerende deelvraag zitten.\n"
     "- Beantwoordt het hoofdstuk 'Juridisch onderzoek' de bijbehorende juridische deelvraag/deelvragen?\n"
     "- Beantwoordt het hoofdstuk 'Praktijkonderzoek' de bijbehorende praktijk-deelvraag/deelvragen?\n"
-    "- Is er een evaluerende deelvraag? Wordt de praktijk goed getoetst aan het recht? "
-    "(Of, als een juridische situatie/ontwikkeling/wijziging wordt getoetst aan niet-juridische "
-    "criteria zoals doelmatigheid en efficiëntie: zijn er goede, MEETBARE criteria geformuleerd "
-    "en wordt het recht goed aan die criteria getoetst?)\n"
+    "- Is er een evaluerende deelvraag die de praktijk aan het recht toetst (of, bij niet-juridische "
+    "criteria zoals doelmatigheid/efficiëntie, aan vooraf bepaalde criteria)? Beoordeel de "
+    "aanwezigheid en meetbaarheid van de TOETSINGSCRITERIA bij het toetsingskader/de methode/het "
+    "resultatenhoofdstuk — NIET als eis aan de formulering van de deelvraag zelf; de deelvraag hoeft "
+    "de criteria niet te benoemen als ze in het toetsingskader staan.\n"
     "- Signaleer onderdelen of hele resultatenhoofdstukken die NIET bijdragen aan de beantwoording "
     "van de deelvragen, en leg uit waarom ze niet relevant zijn."
 )
@@ -314,10 +317,10 @@ def _build_user_prompt(rubric_text: str, document_text: str,
         cat1_extra = ("\nEXTRA INHOUDELIJKE CRITERIA (bovenop de rubriek, van de opleiding). "
                       "Verwerk deze in het passende onderdeel.\n"
                       "ONDERSCHEID TWEE SOORTEN bevindingen en kies de \"quote\" daarop:\n"
-                      "(a) Feedback over de (deel)vraag ZELF — onderscheidendheid/overlap tussen "
-                      "deelvragen, beschrijvend vs. functioneel geformuleerd, of een evaluerende "
-                      "deelvraag met meetbare criteria: gebruik als \"quote\" de deelvraag of "
-                      "hoofdvraag zelf.\n"
+                      "(a) Feedback over de (deel)vraag ZELF — UITSLUITEND of de deelvragen onderling "
+                      "onderscheidend zijn en samen de hoofdvraag dekken (een beschrijvende deelvraag "
+                      "is prima; eis GEEN herformulering en GEEN toetsingscriteria in de deelvraag): "
+                      "gebruik als \"quote\" de deelvraag of hoofdvraag zelf.\n"
                       "(b) Feedback over of (en hoe goed) een deelvraag wordt BEANTWOORD en over de "
                       "uitwerking van het resultatenhoofdstuk: gebruik als \"quote\" de "
                       "TUSSENCONCLUSIE of de KOP van DAT resultatenhoofdstuk — NIET de deelvraag "
@@ -429,7 +432,7 @@ EST_OUTPUT_TOKENS = 6000
 
 
 def _call_llm(system_prompt: str, cacheable_prefix: str, document_block: str,
-              model: str, max_tokens: int = 16000) -> dict:
+              model: str, max_tokens: int = 32000) -> dict:
     """
     Eén Anthropic-call met prompt-caching op het systeemprompt + rubric-deel.
     Streamt het antwoord (ruim output-budget) zodat de JSON niet halverwege afkapt.

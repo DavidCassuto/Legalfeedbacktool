@@ -179,6 +179,7 @@
         <label class="wz-check"><input type="checkbox" id="taalEnabled" checked> Taalfouten markeren</label>
         <label class="wz-check"><input type="checkbox" id="stijlEnabled" checked> Schrijfkwaliteit (als comment)</label>
         <label class="wz-check"><input type="checkbox" id="aiEnabled" checked> AI-stijldetectie (als comment)</label>
+        <label class="wz-check"><input type="checkbox" id="bronEnabled" checked> Bronvermelding / citeerwijze (als comment)</label>
         <label class="wz-check"><input type="checkbox" id="showSuggestions" checked> Suggesties tonen</label>
         <label class="wz-check"><input type="checkbox" id="allowLangOverride"> Docent mag de feedback-taal per run wisselen</label>
       </div>
@@ -353,6 +354,7 @@ async function saveStep3() {
   if (document.getElementById('taalEnabled').checked)     fd.append('taal_enabled', '1');
   if (document.getElementById('stijlEnabled').checked)    fd.append('stijl_enabled', '1');
   if (document.getElementById('aiEnabled').checked)       fd.append('ai_enabled', '1');
+  if (document.getElementById('bronEnabled').checked)     fd.append('bron_enabled', '1');
   if (document.getElementById('showSuggestions').checked) fd.append('show_suggestions', '1');
   if (document.getElementById('allowLangOverride').checked) fd.append('allow_language_override', '1');
   fd.append('max_per_categorie', document.getElementById('maxPer').value);

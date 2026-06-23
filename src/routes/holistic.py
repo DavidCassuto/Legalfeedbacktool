@@ -95,6 +95,7 @@ def holistic_run():
     taal_enabled = bool(request.form.get('taal_enabled'))
     stijl_enabled = bool(request.form.get('stijl_enabled'))
     ai_enabled = bool(request.form.get('ai_enabled'))
+    bron_enabled = bool(request.form.get('bron_enabled'))
     show_suggestions = bool(request.form.get('show_suggestions'))
     feedback_language = (request.form.get('feedback_language') or '').strip()
 
@@ -102,7 +103,8 @@ def holistic_run():
         return {'rubric_text': rubric_text, 'product_type': product_type,
                 'include_annexes': include_annexes, 'saved_rubric_id': saved_rubric_id,
                 'taal_enabled': taal_enabled, 'stijl_enabled': stijl_enabled,
-                'ai_enabled': ai_enabled, 'show_suggestions': show_suggestions,
+                'ai_enabled': ai_enabled, 'bron_enabled': bron_enabled,
+                'show_suggestions': show_suggestions,
                 'feedback_language': feedback_language}
 
     def _back():
@@ -173,6 +175,7 @@ def holistic_run():
         'taal_enabled':      taal_enabled,
         'stijl_enabled':     stijl_enabled,
         'ai_enabled':        ai_enabled,
+        'bron_enabled':      bron_enabled,
         'show_suggestions':  show_suggestions,
         'language':          run_language,
         'allow_language_override': bool(saved_cfg.get('allow_language_override')),
@@ -181,6 +184,7 @@ def holistic_run():
         'taal_instructies':  saved_cfg.get('taal_instructies', ''),
         'stijl_instructies': saved_cfg.get('stijl_instructies', ''),
         'ai_instructies':    saved_cfg.get('ai_instructies', ''),
+        'bron_instructies':  saved_cfg.get('bron_instructies', ''),
         'toon':              saved_cfg.get('toon', ''),
         'max_per_categorie': saved_cfg.get('max_per_categorie'),
     }
@@ -308,6 +312,8 @@ def holistic_rubric_add():
         'stijl_instructies': (request.form.get('stijl_instructies') or '').strip(),
         'ai_enabled':        bool(request.form.get('ai_enabled')),
         'ai_instructies':    (request.form.get('ai_instructies') or '').strip(),
+        'bron_enabled':      bool(request.form.get('bron_enabled')),
+        'bron_instructies':  (request.form.get('bron_instructies') or '').strip(),
         'toon':              (request.form.get('toon') or '').strip(),
         'show_suggestions':  bool(request.form.get('show_suggestions')),
         'max_per_categorie': int(request.form.get('max_per_categorie') or 0) or None,
@@ -369,6 +375,8 @@ def holistic_rubric_update(rubric_id):
         'stijl_instructies': (request.form.get('stijl_instructies') or '').strip(),
         'ai_enabled':        bool(request.form.get('ai_enabled')),
         'ai_instructies':    (request.form.get('ai_instructies') or '').strip(),
+        'bron_enabled':      bool(request.form.get('bron_enabled')),
+        'bron_instructies':  (request.form.get('bron_instructies') or '').strip(),
         'toon':              (request.form.get('toon') or '').strip(),
         'show_suggestions':  bool(request.form.get('show_suggestions')),
         'max_per_categorie': int(request.form.get('max_per_categorie') or 0) or None,

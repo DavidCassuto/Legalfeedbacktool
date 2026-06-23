@@ -98,6 +98,36 @@ DEFAULT_AI_INSTRUCTIES = (
     "- Verwijzingen naar bronnen die niet concreet worden aangehaald of toegepast.\n"
     "NIET vlaggen: inhoudelijke tekortkomingen, grammatica/spelling, of stijlkeuzes die niet op AI wijzen."
 )
+DEFAULT_BRON_INSTRUCTIES = (
+    "Toets de voetnoten/bronverwijzingen aan de Leidraad voor juridische auteurs, zowel "
+    "INHOUDELIJK als qua NOTATIE.\n"
+    "INHOUDELIJK: ondersteunt de aangehaalde bron de stelling; is het de juiste soort bron "
+    "(wet, jurisprudentie, parlementair stuk, literatuur); is de bron gezaghebbend en actueel; "
+    "wordt naar de oorspronkelijke bron verwezen (niet naar een doorgeefbron)?\n"
+    "NOTATIE (Leidraad):\n"
+    "- Verkorte verwijzing in voetnoten; volledige titelgegevens in de literatuurlijst. Verwijs "
+    "niet naar een eerdere noot ('zie noot 12') maar herhaal de verkorte verwijzing. Voetnoot "
+    "eindigt met een punt. Paginanummer met 'p.' (niet pag./pg./blz./nr.). Nootnummer staat na "
+    "het leesteken bij een hele zin.\n"
+    "- Boek (voetnoot): 'Achternaam Jaar, p. X.' — geen komma tussen auteur en jaartal; geen "
+    "voorletters (tenzij dezelfde achternaam); '&' bij meerdere auteurs; 'e.a.' bij meer dan drie. "
+    "Literatuurlijst: 'Voorletters Achternaam, Titel (cursief), Stad: Uitgever Jaar.'\n"
+    "- Tijdschriftartikel (voetnoot): 'Achternaam, Tijdschrift (cursief) jaartal, afl. X, p. Y.' of "
+    "met publicatienummer 'Achternaam, NJB 2013/1344.' Titel artikel tussen aanhalingstekens, "
+    "tijdschriftnaam cursief.\n"
+    "- Wetsartikel: 'art. 6:162 BW.' Wet-/regelgeving, jurisprudentie en kamerstukken horen NIET in "
+    "de literatuurlijst (eventueel aparte registers).\n"
+    "- Jurisprudentie: instantie (afgekort) + (zittings)plaats + datum, gevolgd door ECLI: "
+    "'HR 18 januari 2008, ECLI:NL:HR:2008:BB3210.' Zonder ECLI maar wel gepubliceerd: vindplaats in "
+    "tijdschrift. Zonder publicatie en ECLI: alleen het (rol)nummer.\n"
+    "- Kamerstukken: 'Kamerstukken II 1993/94, 23721, nr. 3 (MvT).' (Kamerstukken cursief; I/II; "
+    "vergaderjaar; dossiernummer; nr.; type). Handelingen: 'Handelingen II 2003/04, nr. 82, "
+    "p. 5281-5282.' (vanaf 2011 itemnummers).\n"
+    "- Online bronnen: volg de notatie van de papieren bron; verwijs naar de oorspronkelijke bron; "
+    "anonieme websites niet in de literatuurlijst; vermeld waar relevant de raadpleeg-/bewerkdatum.\n"
+    "Wees consequent: meld inconsistente of afwijkende notatie en geef de juiste Leidraad-vorm als "
+    "suggestie. Beoordeel alleen daadwerkelijke bronverwijzingen; verzin geen ontbrekende bronnen."
+)
 DEFAULT_MAX_PER_CATEGORIE = 15
 
 # ── Engelse standaardsets (Fase 0 — eerste opzet; verfijnen in Fase 1) ──────────
@@ -140,14 +170,25 @@ _EN_TOON = (
     "point the way to a better formulation. Use language the audience understands; avoid jargon in the "
     "feedback itself."
 )
+_EN_BRON = (
+    "Check the footnotes/citations against the citation standard required by the programme "
+    "(e.g. APA, OSCOLA, or another house style), both for SUBSTANCE (does the cited source support "
+    "the claim; is it the right, authoritative and current type of source; is the original source "
+    "cited rather than a second-hand reference) and for NOTATION/consistency (author, year, title, "
+    "page, journal/court/case identifiers, online retrieval date). Flag inconsistent or incorrect "
+    "citation notation and give the correct form as a suggestion. Assess only actual citations; do "
+    "not invent missing sources."
+)
 
 # Standaard-criteria per taal. Hebreeuws (Fase 3) gebruikt voorlopig de Engelse
 # criteriatekst als placeholder; de feedback komt wél in het Hebreeuws via de
 # output-instructie. De Hebreeuwse criteria zelf zijn nog te herschrijven.
 DEFAULTS_BY_LANG = {
     'nl': {'inhoud': DEFAULT_INHOUD_CRITERIA, 'taal': DEFAULT_TAAL_INSTRUCTIES,
-           'stijl': DEFAULT_STIJL_INSTRUCTIES, 'ai': DEFAULT_AI_INSTRUCTIES, 'toon': DEFAULT_TOON},
-    'en': {'inhoud': _EN_INHOUD, 'taal': _EN_TAAL, 'stijl': _EN_STIJL, 'ai': _EN_AI, 'toon': _EN_TOON},
+           'stijl': DEFAULT_STIJL_INSTRUCTIES, 'ai': DEFAULT_AI_INSTRUCTIES, 'toon': DEFAULT_TOON,
+           'bron': DEFAULT_BRON_INSTRUCTIES},
+    'en': {'inhoud': _EN_INHOUD, 'taal': _EN_TAAL, 'stijl': _EN_STIJL, 'ai': _EN_AI, 'toon': _EN_TOON,
+           'bron': _EN_BRON},
 }
 DEFAULTS_BY_LANG['he'] = DEFAULTS_BY_LANG['en']
 
@@ -167,6 +208,8 @@ def _merge_config(cfg: dict | None) -> dict:
         'stijl_instructies': (cfg.get('stijl_instructies') or d['stijl']).strip(),
         'ai_enabled':       cfg.get('ai_enabled', True),
         'ai_instructies':   (cfg.get('ai_instructies') or d['ai']).strip(),
+        'bron_enabled':     cfg.get('bron_enabled', True),
+        'bron_instructies': (cfg.get('bron_instructies') or d['bron']).strip(),
         'toon':             (cfg.get('toon') or d['toon']).strip(),
         'show_suggestions': cfg.get('show_suggestions', True),
         'max_per_categorie': int(cfg.get('max_per_categorie') or DEFAULT_MAX_PER_CATEGORIE),
@@ -257,6 +300,14 @@ def _build_user_prompt(rubric_text: str, document_text: str,
   "ai_stijl": [
     {{ "quote": "<verbatim passage>", "comment": "<welk AI-stijlpatroon en waarom dit de tekst zwakker maakt>" }}
   ],"""
+    # Categorie BRONVERMELDING — voetnoten/citaten inhoudelijk + qua notatie (worden COMMENTS)
+    bron_block = ""
+    if cfg['bron_enabled']:
+        bron_block = f"""
+  "bronvermelding": [
+    {{ "quote": "<verbatim passage, of de exacte '[voetnoot: ...]'-tekst>", "severity": "<belangrijk|aandachtspunt|tip>",
+       "comment": "<inhoudelijke en/of notatie-opmerking over de bronverwijzing>"{(',' + chr(10) + '       "suggestie": "<juiste citeerwijze of leeg>"') if cfg['show_suggestions'] else ''} }}
+  ],"""
 
     cat1_extra = ""
     if cfg.get('inhoud_criteria'):
@@ -290,6 +341,12 @@ def _build_user_prompt(rubric_text: str, document_text: str,
     cat5_instr = (f"\nCATEGORIE AI-STIJLDETECTIE — vul \"ai_stijl\". "
                   f"Richtlijn van de opleiding: {cfg['ai_instructies']} "
                   f"Geef maximaal {cap} REPRESENTATIEVE voorbeelden.\n" if cfg['ai_enabled'] else "")
+    cat_bron_instr = (f"\nCATEGORIE BRONVERMELDING — vul \"bronvermelding\". De voetnoten staan in de "
+                  f"tekst als '[voetnoot: ...]' direct achter de bijbehorende passage. "
+                  f"Richtlijn van de opleiding: {cfg['bron_instructies']} "
+                  f"Citeer als \"quote\" de passage of de exacte '[voetnoot: ...]'-tekst waar de "
+                  f"opmerking over gaat. Geef maximaal {cap} belangrijkste punten.\n"
+                  if cfg['bron_enabled'] else "")
 
     cacheable_prefix = f"""{detect_instr}Hieronder staan eerst de BEOORDELINGSRUBRIC en daarna het volledige STUDENTDOCUMENT.
 
@@ -307,7 +364,7 @@ bronnen, ruwe data) zijn steunmateriaal — geef daar GEEN feedback op.
 
 Drie soorten feedback:
 1. INHOUD per rubric-onderdeel -> "rubric_items" (de inhoudelijke eisen uit de rubric).
-{cat1_extra}{cat2_instr}{cat3_instr}{cat5_instr}
+{cat1_extra}{cat2_instr}{cat3_instr}{cat5_instr}{cat_bron_instr}
 ZEER BELANGRIJK voor elke "quote": een letterlijk (verbatim) overgenomen stuk tekst uit het
 document, exact zoals het er staat (zelfde woorden, leestekens, hoofdletters). Kopieer het,
 verzin of parafraseer NIET. Houd het kort (één zin of deelzin) en kies de quote zó dat hij EXACT
@@ -337,7 +394,7 @@ Geef je antwoord UITSLUITEND als geldige JSON, zonder extra tekst eromheen, in d
 {sugg_field}        }}
       ]
     }}
-  ],{taal_block}{stijl_block}{ai_block}
+  ],{taal_block}{stijl_block}{ai_block}{bron_block}
   "eindbeeld": "<formatieve slotalinea: de belangrijkste punten om aan te werken>"
 }}
 
@@ -817,6 +874,7 @@ def run_holistic_analysis(
     rubric_items = data.get('rubric_items', []) or []
     schrijfkwaliteit = data.get('schrijfkwaliteit', []) or []
     ai_stijl = data.get('ai_stijl', []) or []
+    bronvermelding = data.get('bronvermelding', []) or []
     taalfouten = data.get('taalfouten', []) or []
     eindbeeld = data.get('eindbeeld', '') or ''
     detected_product_type = (data.get('product_type') or '').strip() or product_type
@@ -866,6 +924,9 @@ def run_holistic_analysis(
     # Categorie 5: AI-stijldetectie -> comments
     for f in ai_stijl:
         _add_comment('Schrijfstijl (AI-signaal)', f, 'holistic')
+    # Categorie BRONVERMELDING: voetnoten/citaten -> comments
+    for f in bronvermelding:
+        _add_comment('Bronvermelding', f, 'holistic')
 
     # Categorie 2: taalfouten -> lichte MARKERING (geen comment).
     # quote = context om de plek te vinden; fout = exact het te markeren stukje.
@@ -912,6 +973,7 @@ def run_holistic_analysis(
         'rubric_items':     rubric_items,
         'schrijfkwaliteit': schrijfkwaliteit,
         'ai_stijl':         ai_stijl,
+        'bronvermelding':   bronvermelding,
         'taalfouten':       taalfouten,
         'eindbeeld':        eindbeeld,
         'product_type':     detected_product_type,

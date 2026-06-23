@@ -96,6 +96,15 @@
     </label>
     <textarea name="ai_instructies" rows="5">{{ cfg.ai_instructies }}</textarea>
 
+    <label style="margin-top:12px;">
+      <input type="checkbox" name="bron_enabled" value="1" {% if cfg.bron_enabled %}checked{% endif %}>
+      6. Bronvermelding / citeerwijze — als comment
+    </label>
+    <textarea name="bron_instructies" rows="8">{{ cfg.bron_instructies }}</textarea>
+    <div class="holo-hint">Voetnoten worden zowel inhoudelijk als qua notatie getoetst. NL-standaard =
+      Leidraad voor juridische auteurs; voor andere opleidingen kun je hier een andere citeerstandaard
+      zetten (bijv. APA).</div>
+
     <label style="margin-top:12px;">4. Toon van de feedback</label>
     <textarea name="toon" rows="3">{{ cfg.toon }}</textarea>
 

@@ -107,6 +107,8 @@ def onboarding_step2():
         'stijl_instructies':  '',
         'ai_enabled':         bool(request.form.get('ai_enabled')),
         'ai_instructies':     '',
+        'bron_enabled':       bool(request.form.get('bron_enabled')),
+        'bron_instructies':   '',
         'toon':               (request.form.get('toon') or '').strip(),
         'show_suggestions':   bool(request.form.get('show_suggestions')),
         'max_per_categorie':  int(request.form.get('max_per_categorie') or 0) or None,

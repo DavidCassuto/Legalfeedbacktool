@@ -214,7 +214,7 @@ def _merge_config(cfg: dict | None) -> dict:
         'bron_enabled':     cfg.get('bron_enabled', True),
         'bron_instructies': (cfg.get('bron_instructies') or d['bron']).strip(),
         'toon':             (cfg.get('toon') or d['toon']).strip(),
-        'show_suggestions': cfg.get('show_suggestions', True),
+        'show_suggestions': cfg.get('show_suggestions', False),
         'max_per_categorie': int(cfg.get('max_per_categorie') or DEFAULT_MAX_PER_CATEGORIE),
         'allow_language_override': bool(cfg.get('allow_language_override')),
     }

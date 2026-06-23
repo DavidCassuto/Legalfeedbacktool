@@ -132,7 +132,7 @@
           Bronvermelding <span class="holo-hint" style="display:inline;">(voetnoten inhoudelijk + citeerwijze, bijv. Leidraad — als Word-comment)</span>
         </label>
         <label style="font-weight:500; display:block; margin-top:6px;">
-          <input type="checkbox" name="show_suggestions" value="1" {% if not form or form.show_suggestions %}checked{% endif %}>
+          <input type="checkbox" name="show_suggestions" value="1" {% if form and form.show_suggestions %}checked{% endif %}>
           Suggesties tonen <span class="holo-hint" style="display:inline;">(uit = alleen benoemen wat beter kan)</span>
         </label>
         <div class="holo-hint" style="margin-top:8px;">Inhoudelijke feedback per onderdeel en de toon

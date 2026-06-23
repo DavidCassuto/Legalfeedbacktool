@@ -312,14 +312,21 @@ def _build_user_prompt(rubric_text: str, document_text: str,
     cat1_extra = ""
     if cfg.get('inhoud_criteria'):
         cat1_extra = ("\nEXTRA INHOUDELIJKE CRITERIA (bovenop de rubriek, van de opleiding). "
-                      "Verwerk deze in het passende onderdeel. Geef voor ELKE deelvraag / ELK "
-                      "resultatenhoofdstuk een APARTE bevinding (finding) met als \"quote\" de "
-                      "tussenconclusie of deelvraag van dat hoofdstuk, en in \"comment\" een "
-                      "expliciet oordeel of (en hoe goed) de deelvraag wordt beantwoord — ook als "
-                      "meerdere deelvragen onder hetzelfde rubric-onderdeel vallen. "
+                      "Verwerk deze in het passende onderdeel.\n"
+                      "ONDERSCHEID TWEE SOORTEN bevindingen en kies de \"quote\" daarop:\n"
+                      "(a) Feedback over de (deel)vraag ZELF — onderscheidendheid/overlap tussen "
+                      "deelvragen, beschrijvend vs. functioneel geformuleerd, of een evaluerende "
+                      "deelvraag met meetbare criteria: gebruik als \"quote\" de deelvraag of "
+                      "hoofdvraag zelf.\n"
+                      "(b) Feedback over of (en hoe goed) een deelvraag wordt BEANTWOORD en over de "
+                      "uitwerking van het resultatenhoofdstuk: gebruik als \"quote\" de "
+                      "TUSSENCONCLUSIE of de KOP van DAT resultatenhoofdstuk — NIET de deelvraag "
+                      "(anders raakt de deelvraag overladen met hoofdstuk-feedback). "
+                      "Geef per deelvraag/resultatenhoofdstuk een aparte bevinding, ook als meerdere "
+                      "deelvragen onder hetzelfde rubric-onderdeel vallen.\n"
                       "PLAATSING: hoort een tekortkoming bij een ander hoofdstuk (bv. een "
-                      "ontbrekende methodologie hoort thuis in het methode-hoofdstuk, niet bij een "
-                      "tussenconclusie), kies dan een \"quote\" uit DAT hoofdstuk.\n"
+                      "ontbrekende methodologie hoort thuis in het methode-hoofdstuk), kies dan een "
+                      "\"quote\" uit DAT hoofdstuk.\n"
                       f"{cfg['inhoud_criteria']}\n")
     if cfg.get('onderwijs_criteria'):
         cat1_extra += ("\nAANVULLENDE INHOUDELIJKE CRITERIA uit het onderwijsmateriaal van de "
@@ -385,7 +392,7 @@ Geef je antwoord UITSLUITEND als geldige JSON, zonder extra tekst eromheen, in d
     {{
       "naam": "<naam van het rubric-onderdeel, bv. Methode>",
       "feedback": "<formatieve samenvatting: wat is sterk en wat kan beter — GEEN cijfer; beantwoordt het hoofdstuk zijn deelvraag?>",
-      "anchor": "<ALTIJD invullen: een verbatim zin uit dit onderdeel (bv. de deelvraag, hoofdvraag of tussenconclusie) waar de samenvatting — ook positieve feedback — als comment bij wordt geplaatst>",
+      "anchor": "<ALTIJD invullen: een verbatim zin uit dit onderdeel waar de samenvatting — ook positieve feedback — als comment bij wordt geplaatst. Kies bij voorkeur de TUSSENCONCLUSIE of de KOP van dit onderdeel; gebruik de deelvraag/hoofdvraag NIET als anker (die plek is voor feedback over de vraag zelf).>",
       "findings": [
         {{
           "quote": "<verbatim passage>",

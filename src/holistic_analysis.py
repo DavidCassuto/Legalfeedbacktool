@@ -354,8 +354,11 @@ def _build_user_prompt(rubric_text: str, document_text: str,
     cat_bron_instr = (f"\nCATEGORIE BRONVERMELDING — vul \"bronvermelding\". De voetnoten staan in de "
                   f"tekst als '[voetnoot: ...]' direct achter de bijbehorende passage. "
                   f"Richtlijn van de opleiding: {cfg['bron_instructies']} "
-                  f"Citeer als \"quote\" de passage of de exacte '[voetnoot: ...]'-tekst waar de "
-                  f"opmerking over gaat. Geef maximaal {cap} belangrijkste punten.\n"
+                  f"Citeer als \"quote\" ALTIJD de exacte '[voetnoot: ...]'-tekst van de voetnoot "
+                  f"waar de opmerking over gaat — zodat het commentaar bij die voetnoot zelf "
+                  f"belandt en NIET bij een inleidende of samenvattende zin elders (bv. in de "
+                  f"samenvatting) die het onderwerp alleen noemt. Eén bevinding per voetnoot met "
+                  f"een probleem. Geef maximaal {cap} belangrijkste punten.\n"
                   if cfg['bron_enabled'] else "")
 
     cacheable_prefix = f"""{detect_instr}Hieronder staan eerst de BEOORDELINGSRUBRIC en daarna het volledige STUDENTDOCUMENT.

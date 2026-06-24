@@ -308,7 +308,7 @@ def _build_user_prompt(rubric_text: str, document_text: str,
     if cfg['bron_enabled']:
         bron_block = f"""
   "bronvermelding": [
-    {{ "quote": "<verbatim passage, of de exacte '[voetnoot: ...]'-tekst>", "severity": "<belangrijk|aandachtspunt|tip>",
+    {{ "quote": "<de exacte '[voetnoot N: ...]'-tekst, inclusief het nummer N>", "severity": "<belangrijk|aandachtspunt|tip>",
        "comment": "<inhoudelijke en/of notatie-opmerking over de bronverwijzing>"{(',' + chr(10) + '       "suggestie": "<juiste citeerwijze of leeg>"') if cfg['show_suggestions'] else ''} }}
   ],"""
 
@@ -357,13 +357,13 @@ def _build_user_prompt(rubric_text: str, document_text: str,
                   f"Richtlijn van de opleiding: {cfg['ai_instructies']} "
                   f"Geef maximaal {cap} REPRESENTATIEVE voorbeelden.\n" if cfg['ai_enabled'] else "")
     cat_bron_instr = (f"\nCATEGORIE BRONVERMELDING — vul \"bronvermelding\". De voetnoten staan in de "
-                  f"tekst als '[voetnoot: ...]' direct achter de bijbehorende passage. "
+                  f"tekst als '[voetnoot N: ...]' (N = het voetnootnummer) direct achter de zin "
+                  f"waar de voetnoot is geplaatst. "
                   f"Richtlijn van de opleiding: {cfg['bron_instructies']} "
-                  f"Citeer als \"quote\" ALTIJD de exacte '[voetnoot: ...]'-tekst van de voetnoot "
-                  f"waar de opmerking over gaat — zodat het commentaar bij die voetnoot zelf "
-                  f"belandt en NIET bij een inleidende of samenvattende zin elders (bv. in de "
-                  f"samenvatting) die het onderwerp alleen noemt. Eén bevinding per voetnoot met "
-                  f"een probleem. Geef maximaal {cap} belangrijkste punten.\n"
+                  f"Citeer als \"quote\" ALTIJD de exacte '[voetnoot N: ...]'-tekst INCLUSIEF het "
+                  f"nummer N van de voetnoot waar de opmerking over gaat — zodat het commentaar bij "
+                  f"die voetnoot zelf belandt en NIET bij een inleidende of samenvattende zin elders. "
+                  f"Eén bevinding per voetnoot met een probleem. Geef maximaal {cap} belangrijkste punten.\n"
                   if cfg['bron_enabled'] else "")
 
     cacheable_prefix = f"""{detect_instr}Hieronder staan eerst de BEOORDELINGSRUBRIC en daarna het volledige STUDENTDOCUMENT.
@@ -943,13 +943,23 @@ def run_holistic_analysis(
     # Categorie 5: AI-stijldetectie -> comments
     for f in ai_stijl:
         _add_comment('Schrijfstijl (AI-signaal)', f, 'holistic')
-    # Categorie BRONVERMELDING: voetnoten/citaten -> comments. Prefix met de voetnoot-citatie
-    # zodat het comment identificeerbaar blijft, ook als er meerdere op dezelfde paragraaf/kop
-    # (bv. een bronnen-/verantwoordingsparagraaf) terechtkomen.
+    # Categorie BRONVERMELDING: voetnoten/citaten -> comments. We zoeken de voetnoot op NUMMER
+    # (uniek, wordt door het model niet 'gladgestreken') zodat het comment betrouwbaar landt op
+    # de zin waar voetnoot N staat — i.p.v. terug te vallen op een kop. Daarna prefixen we het
+    # comment met de citatie zodat het identificeerbaar blijft.
+    fn_markers = {num: m.group(0) for m in re.finditer(r'\[voetnoot (\d+): (.*?)\]', full_text, re.S)
+                  for num in (m.group(1),)}
     for f in bronvermelding:
         q = (f.get('quote') or '').strip()
-        m = re.match(r'\[voetnoot:\s*(.*?)\]\s*$', q, re.S)
-        cite = (m.group(1).strip() if m else q).strip()
+        num_m = re.match(r'\[voetnoot (\d+):', q)
+        if num_m and num_m.group(1) in fn_markers:
+            real = fn_markers[num_m.group(1)]            # exacte marker uit de tekst -> betrouwbare plaatsing
+            cite_m = re.match(r'\[voetnoot \d+:\s*(.*?)\]\s*$', real, re.S)
+            cite = (cite_m.group(1).strip() if cite_m else real).strip()
+            f = {**f, 'quote': real}
+        else:
+            cite_m = re.match(r'\[voetnoot \d*:?\s*(.*?)\]\s*$', q, re.S)
+            cite = (cite_m.group(1).strip() if cite_m else q).strip()
         if cite and (f.get('comment') or '').strip():
             f = {**f, 'comment': f"Voetnoot '{cite}': {f['comment']}"}
         _add_comment('Bronvermelding', f, 'holistic')

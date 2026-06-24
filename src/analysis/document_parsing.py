@@ -94,13 +94,13 @@ def parse_document(file_path: str, mark_objects: bool = False) -> tuple[str, lis
             _fn_text = {}
 
         def _voetnoten_in_para(para):
-            """Geef de voetnoot-/eindnoottekst(en) waarnaar deze paragraaf verwijst, in volgorde."""
+            """Geef (nummer, tekst) van de voetnoten/eindnoten waarnaar deze paragraaf verwijst."""
             uit = []
             for el in para._p.iter():
                 if el.tag.endswith('}footnoteReference') or el.tag.endswith('}endnoteReference'):
                     rid = el.get(f'{{{_WNS}}}id')
                     if rid in _fn_text:
-                        uit.append(_fn_text[rid])
+                        uit.append((rid, _fn_text[rid]))
             return uit
 
         # Helper: detecteer een figuur/afbeelding in een paragraaf en geef een marker
@@ -129,7 +129,7 @@ def parse_document(file_path: str, mark_objects: bool = False) -> tuple[str, lis
             # dus wél een bronverwijzing) zodat het model de citatie ziet.
             _vn = _voetnoten_in_para(para)
             if _vn:
-                para_text = para_text.rstrip() + ' ' + ' '.join(f'[voetnoot: {t}]' for t in _vn)
+                para_text = para_text.rstrip() + ' ' + ' '.join(f'[voetnoot {rid}: {t}]' for rid, t in _vn)
             paragraphs.append(para_text.strip())
 
             style_name = para.style.name if para.style else 'Normal'

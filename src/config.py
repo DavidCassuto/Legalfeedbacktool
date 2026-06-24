@@ -23,6 +23,7 @@ class Config:
     # AI Feedback configuratie
     GEMINI_API_KEY    = os.getenv('GEMINI_API_KEY')
     ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')  # voor llm_review (Claude)
+    OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')  # multi-model vergelijking via OpenRouter
     
     # Export configuratie
     EXPORT_FOLDER = os.path.join(UPLOAD_FOLDER, 'exports')

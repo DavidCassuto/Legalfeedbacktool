@@ -441,6 +441,47 @@ EST_OUTPUT_TOKENS = 6000
 
 def _call_llm(system_prompt: str, cacheable_prefix: str, document_block: str,
               model: str, max_tokens: int = 32000) -> dict:
+    """Roept het LLM aan. Claude-modellen (model begint met 'claude-') gaan via de
+    native Anthropic-SDK (met prompt-caching); alle andere modellen via OpenRouter
+    (OpenAI-compatibel) voor de modelvergelijking."""
+    if model.startswith('claude-'):
+        return _call_anthropic(system_prompt, cacheable_prefix, document_block, model, max_tokens)
+    return _call_openrouter(system_prompt, cacheable_prefix, document_block, model, max_tokens)
+
+
+def _call_openrouter(system_prompt: str, cacheable_prefix: str, document_block: str,
+                     model: str, max_tokens: int) -> dict:
+    """OpenAI-compatibele call via OpenRouter (geen prompt-caching). Vraagt de
+    werkelijke kosten op via usage.include."""
+    from openai import OpenAI
+    if not Config.OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY niet ingesteld (.env).")
+    client = OpenAI(base_url='https://openrouter.ai/api/v1', api_key=Config.OPENROUTER_API_KEY)
+    resp = client.chat.completions.create(
+        model=model, max_tokens=max_tokens, temperature=0.4,
+        messages=[
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': cacheable_prefix + '\n' + document_block},
+        ],
+        extra_body={'usage': {'include': True}},
+    )
+    choice = resp.choices[0]
+    u = resp.usage
+    cost = getattr(u, 'cost', None)
+    if cost is None and getattr(u, 'model_extra', None):
+        cost = u.model_extra.get('cost')
+    return {
+        'text':          choice.message.content or '',
+        'input_tokens':  getattr(u, 'prompt_tokens', 0) or 0,
+        'output_tokens': getattr(u, 'completion_tokens', 0) or 0,
+        'cache_read':    0, 'cache_created': 0,
+        'stop_reason':   choice.finish_reason,
+        'cost_usd':      cost,
+    }
+
+
+def _call_anthropic(system_prompt: str, cacheable_prefix: str, document_block: str,
+                    model: str, max_tokens: int = 32000) -> dict:
     """
     Eén Anthropic-call met prompt-caching op het systeemprompt + rubric-deel.
     Streamt het antwoord (ruim output-budget) zodat de JSON niet halverwege afkapt.

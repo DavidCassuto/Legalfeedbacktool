@@ -1063,6 +1063,8 @@ def run_holistic_analysis(
         'usage':            {'input_tokens': llm['input_tokens'],
                              'output_tokens': llm['output_tokens'],
                              'cache_read': llm.get('cache_read', 0),
-                             'cache_created': llm.get('cache_created', 0)},
+                             'cache_created': llm.get('cache_created', 0),
+                             'cost_usd': llm.get('cost_usd'),
+                             'stop_reason': llm.get('stop_reason')},
         'model':            model,
     }

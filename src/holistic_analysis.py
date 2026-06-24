@@ -327,6 +327,11 @@ def _build_user_prompt(rubric_text: str, document_text: str,
                       "(anders raakt de deelvraag overladen met hoofdstuk-feedback). "
                       "Geef per deelvraag/resultatenhoofdstuk een aparte bevinding, ook als meerdere "
                       "deelvragen onder hetzelfde rubric-onderdeel vallen.\n"
+                      "Geef de HOOFDVRAAG een EIGEN bevinding (quote = de hoofdvraag) als daar iets "
+                      "over te zeggen is (bv. te lang, meerdere vragen in één, onhelder) — plaats die "
+                      "NIET bij een deelvraag. Een opmerking over een specifieke deelvraag hoort als "
+                      "finding BIJ die deelvraag en mag je NIET herhalen in de onderdeel-samenvatting "
+                      "(\"feedback\").\n"
                       "PLAATSING: hoort een tekortkoming bij een ander hoofdstuk (bv. een "
                       "ontbrekende methodologie hoort thuis in het methode-hoofdstuk), kies dan een "
                       "\"quote\" uit DAT hoofdstuk.\n"
@@ -397,7 +402,7 @@ Geef je antwoord UITSLUITEND als geldige JSON, zonder extra tekst eromheen, in d
 {pt_field}  "rubric_items": [
     {{
       "naam": "<naam van het rubric-onderdeel, bv. Methode>",
-      "feedback": "<formatieve samenvatting: wat is sterk en wat kan beter — GEEN cijfer; beantwoordt het hoofdstuk zijn deelvraag?>",
+      "feedback": "<KORTE overkoepelende samenvatting: wat is sterk en wat kan beter — GEEN cijfer; beantwoordt het hoofdstuk zijn deelvraag? HERHAAL NIET wat al in 'findings' staat; laat leeg als de findings alles dekken>",
       "anchor": "<ALTIJD invullen: een verbatim zin uit dit onderdeel waar de samenvatting — ook positieve feedback — als comment bij wordt geplaatst. Kies bij voorkeur de TUSSENCONCLUSIE of de KOP van dit onderdeel; gebruik de deelvraag/hoofdvraag NIET als anker (die plek is voor feedback over de vraag zelf).>",
       "findings": [
         {{
@@ -447,6 +452,7 @@ def _call_llm(system_prompt: str, cacheable_prefix: str, document_block: str,
     kwargs = dict(
         model=model,
         max_tokens=max_tokens,
+        temperature=0.4,  # lager dan default (1.0) -> consistentere, reproduceerbaardere feedback
         system=[{'type': 'text', 'text': system_prompt,
                  'cache_control': {'type': 'ephemeral'}}],
         messages=[{
@@ -937,8 +943,15 @@ def run_holistic_analysis(
     # Categorie 5: AI-stijldetectie -> comments
     for f in ai_stijl:
         _add_comment('Schrijfstijl (AI-signaal)', f, 'holistic')
-    # Categorie BRONVERMELDING: voetnoten/citaten -> comments
+    # Categorie BRONVERMELDING: voetnoten/citaten -> comments. Prefix met de voetnoot-citatie
+    # zodat het comment identificeerbaar blijft, ook als er meerdere op dezelfde paragraaf/kop
+    # (bv. een bronnen-/verantwoordingsparagraaf) terechtkomen.
     for f in bronvermelding:
+        q = (f.get('quote') or '').strip()
+        m = re.match(r'\[voetnoot:\s*(.*?)\]\s*$', q, re.S)
+        cite = (m.group(1).strip() if m else q).strip()
+        if cite and (f.get('comment') or '').strip():
+            f = {**f, 'comment': f"Voetnoot '{cite}': {f['comment']}"}
         _add_comment('Bronvermelding', f, 'holistic')
 
     # Categorie 2: taalfouten -> lichte MARKERING (geen comment).

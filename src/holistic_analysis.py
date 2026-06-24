@@ -27,7 +27,7 @@ logger = logging.getLogger('docucheck.holistic')
 
 # Standaardmodel voor de holistische beoordeling. Sonnet 4.6 = goede afweging
 # tussen oordeelskwaliteit en kosten op een document van deze omvang.
-DEFAULT_MODEL = 'claude-sonnet-4-6'
+DEFAULT_MODEL = 'claude-haiku-4-5'  # benchmark-winnaar prijs/kwaliteit (was sonnet-4-6)
 
 # Formatieve severity-labels (van het LLM) -> interne status voor de comment-engine.
 # De engine filtert op status in ('violation','warning','info','error'); we mappen

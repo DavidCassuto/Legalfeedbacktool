@@ -465,6 +465,11 @@ def _call_openrouter(system_prompt: str, cacheable_prefix: str, document_block: 
         ],
         extra_body={'usage': {'include': True}},
     )
+    if not getattr(resp, 'choices', None):
+        err = getattr(resp, 'error', None)
+        if err is None and getattr(resp, 'model_extra', None):
+            err = resp.model_extra.get('error')
+        raise RuntimeError(f"OpenRouter gaf geen antwoord (model={model}): {err}")
     choice = resp.choices[0]
     u = resp.usage
     cost = getattr(u, 'cost', None)

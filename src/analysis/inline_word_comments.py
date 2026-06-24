@@ -748,7 +748,7 @@ def _add_markers_to_doc_xml(
             if sug:
                 lines.append(f"Suggestie: {sug}")
 
-        comments_data.append((comment_id, '\n\n'.join(lines), 'FeedbackTool'))
+        comments_data.append((comment_id, '\n\n'.join(lines), 'DocuCheck (AI)'))
         comment_id += 1
 
     # Herserializeer ALLEEN document.xml (alle andere bestanden blijven ongewijzigd)

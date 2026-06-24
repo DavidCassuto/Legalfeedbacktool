@@ -876,6 +876,41 @@ def _quote_is_locatable(quote: str, normalized_paragraphs: list[str]) -> bool:
     return False
 
 
+def _set_core_field(xml: str, tag: str, val: str) -> str:
+    import html as _h
+    v = _h.escape(val)
+    if re.search(r'<' + tag + r'[ >]', xml):
+        return re.sub(r'(<' + tag + r'[^>]*>).*?(</' + tag + r'>)',
+                      lambda m: m.group(1) + v + m.group(2), xml, flags=re.S)
+    return xml.replace('</cp:coreProperties>', f'<{tag}>{v}</{tag}></cp:coreProperties>')
+
+
+def _mark_ai_generated(path: str, model: str) -> None:
+    """Markeer het output-document machine-leesbaar als AI-gegenereerd (EU AI Act art. 50(2)):
+    een vlag in de documentmetadata die het hele document dekt (ook de gele taalmarkeringen)."""
+    import zipfile, io
+    note = (f"AI-gegenereerde feedback door DocuCheck (model {model}). De opmerkingen en de gele "
+            f"taalmarkeringen in dit document zijn automatisch gegenereerd; geen menselijke "
+            f"beoordeling, geen cijfer.")
+    try:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(path) as zin:
+            with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zout:
+                for n in zin.namelist():
+                    data = zin.read(n)
+                    if n == 'docProps/core.xml':
+                        x = data.decode('utf-8', 'replace')
+                        x = _set_core_field(x, 'dc:description', note)
+                        x = _set_core_field(x, 'cp:category', 'AI-generated feedback')
+                        x = _set_core_field(x, 'cp:keywords', 'AI-generated; DocuCheck; Claude')
+                        data = x.encode('utf-8')
+                    zout.writestr(n, data)
+        with open(path, 'wb') as f:
+            f.write(buf.getvalue())
+    except Exception as e:
+        logger.warning("AI-markering metadata mislukt: %s", e)
+
+
 def run_holistic_analysis(
     docx_path: str,
     rubric_text: str,
@@ -1031,6 +1066,20 @@ def run_holistic_analysis(
     # Alleen betrouwbaar plaatsbare comments in het document; de rest blijft zichtbaar
     # in de "niet-geplaatste"-lijst i.p.v. bovenaan (inhoudsopgave) te belanden.
     placeable = [fi for fi in comment_items if fi['_locatable']]
+    # EU AI Act art. 50(2): één disclosure-comment bovenaan, die markeert dat zowel de
+    # opmerkingen als de gele taalmarkeringen AI-gegenereerd zijn (geen per-fout comment).
+    _first = next((p for p in paragraphs
+                   if p.strip() and not _is_toc_line(p) and not p.strip().startswith('[')), None)
+    if _first:
+        placeable.insert(0, {
+            'criteria_id': None, 'criteria_name': 'DocuCheck (AI)', 'section_name': 'DocuCheck (AI)',
+            'status': 'info', 'severity_label': 'info',
+            'message': ('AI-GEGENEREERDE FEEDBACK. Alle opmerkingen en de gele taalmarkeringen in dit '
+                        'document zijn automatisch gegenereerd door DocuCheck (AI). Dit is geen '
+                        'menselijke beoordeling en geen cijfer.'),
+            'suggestion': '', 'offending_snippet': _first, 'confidence': 1.0,
+            'color': _STATUS_COLOR['info'], 'check_type': 'holistic', '_locatable': True,
+        })
     add_inline_comments(
         original_docx_path=docx_path,
         feedback_items=placeable,
@@ -1047,6 +1096,9 @@ def run_holistic_analysis(
                 os.remove(comments_tmp)
         except OSError:
             pass
+
+    # EU AI Act art. 50(2): machine-leesbare AI-markering in de documentmetadata.
+    _mark_ai_generated(output_path, model)
 
     logger.info("Holistisch klaar | comments=%d (geplaatst %d) | taalmarkeringen=%d",
                 len(comment_items), placed_count, highlights_placed)

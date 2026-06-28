@@ -89,3 +89,5 @@ testfiles/
 *.pptx
 *.csv
 ~$*
+# Test-documenten en -generatoren (nooit committen)
+tests/synthetic_docs/

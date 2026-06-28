@@ -13,6 +13,7 @@ Staat los van de bestaande document-pipeline; gebruikt geen secties/criteria/map
 import os
 import re
 import json
+import time
 import uuid
 import traceback
 import logging
@@ -44,6 +45,43 @@ def _holistic_dir() -> str:
     d = os.path.join(current_app.config['UPLOAD_FOLDER'], 'holistic')
     os.makedirs(d, exist_ok=True)
     return d
+
+
+# Bewaartermijnen (AVG-dataminimalisatie, art. 5 lid 1 sub e):
+#   brondocumenten en geuploade rubrics kort, gegenereerde resultaten 30 dagen.
+RETENTIE_BRON_UREN = 24
+RETENTIE_RESULTAAT_DAGEN = 30
+
+
+def _is_resultaat(naam: str) -> bool:
+    """Een gegenereerd, te bewaren resultaatbestand i.p.v. een upload/brondocument."""
+    return '_gecommentarieerd_' in naam
+
+
+def _opschonen(work_dir: str) -> None:
+    """Verwijder verlopen bestanden uit de holistic-map: brondocumenten en
+    geuploade rubrics na RETENTIE_BRON_UREN uur, gegenereerde resultaten na
+    RETENTIE_RESULTAAT_DAGEN dagen. Defensief: een fout hier mag de gebruiker nooit raken."""
+    try:
+        nu = time.time()
+        bron_grens = RETENTIE_BRON_UREN * 3600
+        res_grens = RETENTIE_RESULTAAT_DAGEN * 86400
+        for naam in os.listdir(work_dir):
+            pad = os.path.join(work_dir, naam)
+            if not os.path.isfile(pad):
+                continue
+            try:
+                leeftijd = nu - os.path.getmtime(pad)
+            except OSError:
+                continue
+            grens = res_grens if _is_resultaat(naam) else bron_grens
+            if leeftijd > grens:
+                try:
+                    os.remove(pad)
+                except OSError:
+                    pass
+    except OSError:
+        pass
 
 
 def _saved_rubrics():
@@ -122,6 +160,7 @@ def holistic_run():
         return _back()
 
     work_dir = _holistic_dir()
+    _opschonen(work_dir)  # verlopen bron-/resultaatbestanden opruimen (dataminimalisatie)
     token = uuid.uuid4().hex[:12]
     safe_name = secure_filename(file.filename) or 'document.docx'
     in_path = os.path.join(work_dir, f"{token}_{safe_name}")
@@ -256,10 +295,15 @@ def holistic_analyze():
         return render_template('holistic.html', product_types=PRODUCT_TYPES,
                                auto_detect=AUTO_DETECT, saved_rubrics=_saved_rubrics())
     finally:
-        try:
-            os.remove(job_path)
-        except OSError:
-            pass
+        # Dataminimalisatie: verwijder direct na verwerking het brondocument,
+        # de geuploade rubric en het job-bestand. Het resultaat (_gecommentarieerd_)
+        # blijft staan voor de download en wordt later door _opschonen verwijderd.
+        for naam in os.listdir(work_dir):
+            if naam.startswith(token + '_') and not _is_resultaat(naam):
+                try:
+                    os.remove(os.path.join(work_dir, naam))
+                except OSError:
+                    pass
 
     return render_template(
         'holistic.html', product_types=PRODUCT_TYPES, auto_detect=AUTO_DETECT,

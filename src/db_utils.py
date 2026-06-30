@@ -404,6 +404,13 @@ def migrate_db(conn: sqlite3.Connection):
     if 'first_login' not in user_columns:
         cursor.execute("ALTER TABLE users ADD COLUMN first_login INTEGER NOT NULL DEFAULT 1")
 
+    # --- Migratie: preferred_model per organisatie ---
+    org_columns = [row[1] for row in cursor.execute("PRAGMA table_info(organizations)").fetchall()]
+    if org_columns and 'preferred_model' not in org_columns:
+        cursor.execute(
+            "ALTER TABLE organizations ADD COLUMN preferred_model TEXT DEFAULT 'claude-haiku-4-5'"
+        )
+
     # --- Migratie: document_types tabel uitbreiden ---
     dt_columns = [row[1] for row in cursor.execute("PRAGMA table_info(document_types)").fetchall()]
     if 'description' not in dt_columns:

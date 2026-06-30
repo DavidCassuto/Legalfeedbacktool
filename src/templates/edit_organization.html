@@ -21,6 +21,20 @@
         <textarea id="description" name="description" rows="3"
                   style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px; font-family:inherit;">{{ organization.description or '' }}</textarea>
 
+        <label for="preferred_model" style="display:block; font-weight:600; margin:16px 0 6px;">AI-model voor analyses</label>
+        <select id="preferred_model" name="preferred_model"
+                style="width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px;">
+            <option value="claude-haiku-4-5" {% if (organization.preferred_model or 'claude-haiku-4-5') == 'claude-haiku-4-5' %}selected{% endif %}>
+                Haiku 4.5 — snel &amp; kostenefficiënt (standaard)
+            </option>
+            <option value="claude-sonnet-4-6" {% if organization.preferred_model == 'claude-sonnet-4-6' %}selected{% endif %}>
+                Sonnet 4.6 — hogere kwaliteit, iets hogere kosten
+            </option>
+        </select>
+        <p style="font-size:0.85em; color:#6C757D; margin-top:4px;">
+            Haiku is geschikt voor de meeste analyses. Kies Sonnet voor complexe documenten of wanneer de klant hogere feedbackkwaliteit verwacht.
+        </p>
+
         <div style="margin-top:18px; display:flex; gap:10px;">
             <button type="submit" class="btn">Wijzigingen opslaan</button>
             <a href="{{ url_for('list_organizations') }}" class="btn btn-secondary">Annuleren</a>

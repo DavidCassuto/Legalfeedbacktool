@@ -67,3 +67,13 @@ def current_user_org_id():
 def is_admin():
     """True als de ingelogde gebruiker een admin is."""
     return session.get('user_role') == 'admin'
+
+
+def is_organisatie():
+    """True als de ingelogde gebruiker de organisatierol heeft (docent/school-configurator)."""
+    return session.get('user_role') == 'organisatie'
+
+
+def is_student():
+    """True als de ingelogde gebruiker de studentrol heeft."""
+    return session.get('user_role') == 'student'

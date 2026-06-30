@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Instellingen — {{ rubric.name }} — DocuCheck{% endblock %}
+
+{% block content %}
+<style>
+  .cfg-card { background:#fff; border-radius:14px; padding:24px; margin-bottom:20px;
+              box-shadow:0 4px 15px rgba(77,144,142,0.10); }
+  .cfg-card h2 { color:#4D908E; margin-bottom:6px; font-size:1.15em; }
+  .cfg-hint { color:#6C757D; font-size:0.85em; margin-bottom:10px; }
+  .cfg-hidden { background:#F8F9FA; border-radius:8px; padding:10px 14px;
+                color:#6C757D; font-size:0.9em; border-left:4px solid #CED4DA; }
+  .cfg-label { font-weight:600; display:block; margin-bottom:6px; color:#2B2D42; }
+  .cfg-textarea { width:100%; padding:10px; border:1px solid #CED4DA; border-radius:8px;
+                  font-family:inherit; font-size:0.93em; min-height:90px; resize:vertical; }
+  .cfg-btn { background:linear-gradient(135deg,#4D908E,#52796F); color:#fff; border:none;
+             padding:12px 24px; border-radius:8px; font-size:1em; font-weight:600; cursor:pointer; }
+  .cfg-btn:hover { opacity:0.92; }
+  .cfg-skip { color:#6C757D; font-size:0.9em; margin-left:16px; text-decoration:underline; cursor:pointer; }
+  .badge-aanpasbaar { display:inline-block; padding:2px 8px; border-radius:6px;
+                      background:#E8F4F3; color:#4D908E; font-size:0.78em; font-weight:600; margin-left:6px; }
+  .badge-vast { display:inline-block; padding:2px 8px; border-radius:6px;
+                background:#F3F3F3; color:#6C757D; font-size:0.78em; font-weight:600; margin-left:6px; }
+</style>
+
+<div class="header" style="margin-bottom:20px;">
+  <h1>Instellingen voor {{ rubric.name }}</h1>
+  <p>Controleer en pas zo nodig de standaardinstellingen aan voor jullie opleiding.
+     De vaste criteria worden door DocuCheck toegepast maar zijn hier niet zichtbaar.</p>
+</div>
+
+<form method="POST" action="{{ url_for('organisatie_config_save', rubric_id=rubric.id) }}">
+
+  <div class="cfg-card">
+    <h2>1. Inhoudelijke criteria <span class="badge-aanpasbaar">aanpasbaar</span></h2>
+    <p class="cfg-hint">Extra criteria bovenop de rubriek, beoordeeld in samenhang met het hele document.</p>
+    <textarea class="cfg-textarea" name="inhoud_criteria">{{ cfg.inhoud_criteria or '' }}</textarea>
+  </div>
+
+  <div class="cfg-card">
+    <h2>2. Extra criteria <span class="badge-aanpasbaar">aanpasbaar</span></h2>
+    <p class="cfg-hint">Opleiding-specifieke aanvullingen (structuurvereisten, verplichte bijlagen, etc.).</p>
+    <textarea class="cfg-textarea" name="extra_criteria">{{ cfg.extra_criteria or '' }}</textarea>
+  </div>
+
+  <div class="cfg-card">
+    <h2>3. Citeerstandaard <span class="badge-aanpasbaar">aanpasbaar</span></h2>
+    <p class="cfg-hint">Welke citeerwijze hanteert de opleiding? Dit stuurt de bronvermeldings-check.</p>
+    <textarea class="cfg-textarea" name="citeer_instructies">{{ cfg.citeer_instructies or '' }}</textarea>
+  </div>
+
+  <div class="cfg-card">
+    <h2>4. Bronvermelding <span class="badge-aanpasbaar">aanpasbaar</span></h2>
+    <p class="cfg-hint">Instructies voor de bronnencheck (bijv. eisen aan literatuurlijst, voetnoten).</p>
+    <textarea class="cfg-textarea" name="bron_instructies">{{ cfg.bron_instructies or '' }}</textarea>
+  </div>
+
+  <div class="cfg-card">
+    <h2>5. Toon van de feedback <span class="badge-aanpasbaar">aanpasbaar</span></h2>
+    <p class="cfg-hint">Hoe moet de AI de feedback formuleren (bijv. formeel, motiverend, direct)?</p>
+    <textarea class="cfg-textarea" name="toon" style="min-height:70px;">{{ cfg.toon or '' }}</textarea>
+  </div>
+
+  <div class="cfg-card">
+    <h2>6. Taalfouten <span class="badge-vast">vast</span></h2>
+    <div class="cfg-hidden">Spelling- en grammaticafouten worden automatisch gemarkeerd (gele arcering).
+      De detectiecriteria zijn ingesteld door de beheerder en zijn hier niet aanpasbaar.</div>
+  </div>
+
+  <div class="cfg-card">
+    <h2>7. Academische schrijfkwaliteit <span class="badge-vast">vast</span></h2>
+    <div class="cfg-hidden">Zinslengte, wolligheid en alinea-opbouw worden geanalyseerd en als
+      Word-comment toegevoegd. Criteria zijn ingesteld door de beheerder.</div>
+  </div>
+
+  <div class="cfg-card">
+    <h2>8. AI-stijldetectie <span class="badge-vast">vast</span></h2>
+    <div class="cfg-hidden">Patronen die wijzen op AI-gegenereerde tekst worden als Word-comment
+      gemarkeerd. Criteria zijn ingesteld door de beheerder.</div>
+  </div>
+
+  <div class="cfg-card" style="border:2px solid #4D908E;">
+    <h2 style="margin-bottom:4px;">Max. feedbackpunten per categorie</h2>
+    <p class="cfg-hint">Hoeveel opmerkingen geeft DocuCheck maximaal per rubriek-onderdeel?</p>
+    <input type="number" name="max_per_categorie" min="1" max="50"
+           value="{{ cfg.max_per_categorie or 5 }}"
+           style="width:100px; padding:8px; border:1px solid #CED4DA; border-radius:8px; font-size:1em;">
+  </div>
+
+  <div style="margin-top:6px;">
+    <button class="cfg-btn" type="submit">Instellingen opslaan en verder</button>
+    <a class="cfg-skip" href="{{ url_for('holistic_form') }}">Overslaan, direct naar analyse</a>
+  </div>
+</form>
+{% endblock %}

@@ -152,9 +152,9 @@
 
     <!-- ── Stap 2: Taal & criteria ── -->
     <div class="step" id="step2">
-      <div class="step-title">Stap 2 — Taal &amp; criteria</div>
-      <div class="step-subtitle">Kies de feedback-taal. De standaardcriteria van die taal worden
-        ingevuld — je mag ze laten staan of aanpassen.</div>
+      <div class="step-title">Stap 2 — Standaardinstellingen</div>
+      <div class="step-subtitle">Stel de feedback-taal en alle standaard beoordelingscriteria in voor
+        deze opleiding. De docent/organisatie kan de aanpasbare velden later zelf nog bijstellen.</div>
 
       <div class="form-group">
         <label>Taal van de feedback *</label>
@@ -163,30 +163,60 @@
         </select>
       </div>
 
+      <hr style="border:none; border-top:1px solid #E9ECEF; margin:20px 0;">
+      <div style="font-weight:700; color:#2B2D42; margin-bottom:14px;">Aanpasbare criteria
+        <span style="font-weight:400; font-size:0.85em; color:#6C757D;">(zichtbaar en aanpasbaar voor organisatie/docent)</span>
+      </div>
+
       <div class="form-group">
-        <label>Extra inhoudelijke criteria</label>
+        <label>1. Inhoudelijke criteria <span style="font-weight:400; font-size:0.85em;">(aanvullend op de rubric)</span></label>
         <textarea id="inhoudCriteria" class="wz-textarea"></textarea>
         <div class="wz-hint">Bovenop de rubriek; beoordeeld in samenhang met het hele document.</div>
       </div>
 
       <div class="form-group">
-        <label>Toon van de feedback</label>
+        <label>2. Extra criteria <span style="font-weight:400; font-size:0.85em;">(opleiding-specifieke aanvullingen)</span></label>
+        <textarea id="extraCriteria" class="wz-textarea" style="min-height:80px;"
+                  placeholder="bijv. structuur van het PvA, verplichte bijlagen, doelgroepanalyse..."></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>3. Citeerstandaard</label>
+        <textarea id="citeerStandaard" class="wz-textarea" style="min-height:80px;"
+                  placeholder="bijv. APA 7e editie — vermeld paginanummers bij directe citaten..."></textarea>
+        <div class="wz-hint">Welke citeerwijze hanteert de opleiding? Dit stuurt de bronvermeldings-check.</div>
+      </div>
+
+      <div class="form-group">
+        <label>4. Bronvermelding <span style="font-weight:400; font-size:0.85em;">(instructies voor de bronnencheck)</span></label>
+        <textarea id="bronInstructies" class="wz-textarea" style="min-height:80px;"
+                  placeholder="bijv. controleer of elke claim onderbouwd is met een bron uit de literatuurlijst..."></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>5. Toon van de feedback</label>
         <textarea id="toon" class="wz-textarea" style="min-height:80px;"></textarea>
       </div>
 
-      <div class="form-group">
-        <label>Soorten feedback</label>
-        <label class="wz-check"><input type="checkbox" id="taalEnabled" checked> Taalfouten markeren</label>
-        <label class="wz-check"><input type="checkbox" id="stijlEnabled" checked> Schrijfkwaliteit (als comment)</label>
-        <label class="wz-check"><input type="checkbox" id="aiEnabled" checked> AI-stijldetectie (als comment)</label>
-        <label class="wz-check"><input type="checkbox" id="bronEnabled" checked> Bronvermelding / citeerwijze (als comment)</label>
-        <label class="wz-check"><input type="checkbox" id="showSuggestions"> Suggesties tonen</label>
-        <label class="wz-check"><input type="checkbox" id="allowLangOverride"> Docent mag de feedback-taal per run wisselen</label>
+      <hr style="border:none; border-top:1px solid #E9ECEF; margin:20px 0;">
+      <div style="font-weight:700; color:#2B2D42; margin-bottom:14px;">Vaste criteria
+        <span style="font-weight:400; font-size:0.85em; color:#6C757D;">(aan/uit — criteria zelf blijven verborgen voor de organisatie)</span>
       </div>
 
       <div class="form-group">
-        <label>Max. voorbeelden per categorie</label>
+        <label>Soorten feedback activeren</label>
+        <label class="wz-check"><input type="checkbox" id="taalEnabled" checked> 6. Taalfouten markeren <span style="color:#6C757D; font-size:0.85em;">(spelling/grammatica — gele arcering)</span></label>
+        <label class="wz-check"><input type="checkbox" id="stijlEnabled" checked> 7. Academische schrijfkwaliteit <span style="color:#6C757D; font-size:0.85em;">(zinslengte, wolligheid — als comment)</span></label>
+        <label class="wz-check"><input type="checkbox" id="aiEnabled" checked> 8. AI-stijldetectie <span style="color:#6C757D; font-size:0.85em;">(patronen die op AI-tekst wijzen — als comment)</span></label>
+        <label class="wz-check" style="margin-top:10px;"><input type="checkbox" id="showSuggestions"> Suggesties tonen <span style="color:#6C757D; font-size:0.85em;">(docent kan dit zelf aan/uitzetten; student ziet deze optie niet)</span></label>
+        <label class="wz-check"><input type="checkbox" id="allowLangOverride"> Docent mag de feedback-taal per run wisselen</label>
+        <label class="wz-check"><input type="checkbox" id="bronEnabled" checked> Bronvermelding &amp; citeerwijze actief</label>
+      </div>
+
+      <div class="form-group">
+        <label>Max. feedbackpunten per categorie</label>
         <input type="number" id="maxPer" class="wz-input" style="width:120px;" min="1" max="50" value="{{ default_max }}">
+        <div class="wz-hint">Hoeveel voorbeelden per categorie worden maximaal gegeven in de feedback.</div>
       </div>
 
       <div class="wizard-nav">
@@ -221,8 +251,28 @@
       <div class="step-title">Stap 4 — Docent uitnodigen</div>
       <div class="step-subtitle">Genereer een uitnodigingslink. De docent maakt zelf zijn/haar account aan.</div>
 
+      <div class="form-group" style="margin-bottom:16px;">
+        <label style="font-weight:600; display:block; margin-bottom:8px;">Rol van de uitgenodigde gebruiker</label>
+        <div style="display:flex; gap:10px;">
+          <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px;
+                        border:2px solid #4D908E; border-radius:8px; cursor:pointer; background:rgba(77,144,142,0.06);">
+            <input type="radio" name="inviteRole" id="roleOrganisatie" value="organisatie" checked>
+            <span><strong>Organisatie / Docent</strong><br>
+              <span style="font-size:0.83em; color:#6C757D;">Ziet instellingenscherm + kan document uploaden. Krijgt alleen Word-output.</span>
+            </span>
+          </label>
+          <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px;
+                        border:2px solid #CED4DA; border-radius:8px; cursor:pointer;">
+            <input type="radio" name="inviteRole" id="roleStudent" value="student">
+            <span><strong>Student</strong><br>
+              <span style="font-size:0.83em; color:#6C757D;">Uploadt alleen document en downloadt Word-output. Geen extra opties.</span>
+            </span>
+          </label>
+        </div>
+      </div>
+
       <div class="form-group">
-        <label>Naam docent (optioneel — wordt vooringevuld in het formulier)</label>
+        <label>Naam (optioneel — wordt vooringevuld in het formulier)</label>
         <input type="text" id="teacherName" class="wz-input" placeholder="bijv. M. Jansen">
       </div>
 
@@ -350,6 +400,9 @@ async function saveStep3() {
   fd.append('name', document.getElementById('rubricName').value.trim());
   fd.append('language', document.getElementById('language').value);
   fd.append('inhoud_criteria', document.getElementById('inhoudCriteria').value);
+  fd.append('extra_criteria', document.getElementById('extraCriteria').value);
+  fd.append('citeer_instructies', document.getElementById('citeerStandaard').value);
+  fd.append('bron_instructies', document.getElementById('bronInstructies').value);
   fd.append('toon', document.getElementById('toon').value);
   if (document.getElementById('taalEnabled').checked)     fd.append('taal_enabled', '1');
   if (document.getElementById('stijlEnabled').checked)    fd.append('stijl_enabled', '1');
@@ -377,9 +430,11 @@ async function saveStep3() {
 }
 
 async function generateInvite() {
+  const roleEl = document.querySelector('input[name="inviteRole"]:checked');
   const data = await postJSON('/onboarding/step/4', {
     full_name: document.getElementById('teacherName').value.trim(),
-    org_id: orgId
+    org_id: orgId,
+    role: roleEl ? roleEl.value : 'student'
   });
   if (!data.ok) return alert(data.error);
   inviteUrl = data.invite_url;

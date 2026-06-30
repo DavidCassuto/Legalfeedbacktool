@@ -241,6 +241,18 @@ def holistic_run():
         flash(f'Kon het document niet inlezen: {e}', 'danger')
         return _back()
 
+    # Overschrijf model met de voorkeur van de organisatie van de ingelogde gebruiker.
+    try:
+        org_id_for_model = current_user_org_id()
+        if org_id_for_model:
+            row = get_db().execute(
+                'SELECT preferred_model FROM organizations WHERE id=?', (org_id_for_model,)
+            ).fetchone()
+            if row and row['preferred_model']:
+                estimate['model'] = row['preferred_model']
+    except Exception:
+        pass  # val terug op het standaardmodel — geen analyse-blocker
+
     # Bewaar de voorbereide opdracht zodat stap 2 hem kan uitvoeren
     job = {
         'in_path': in_path, 'out_path': out_path, 'rubric_text': rubric_text,

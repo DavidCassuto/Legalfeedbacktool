@@ -100,7 +100,9 @@ def onboarding_step2():
     feedback_config = {
         'language':           (request.form.get('language') or 'nl').strip(),
         'inhoud_criteria':    (request.form.get('inhoud_criteria') or '').strip(),
+        'extra_criteria':     (request.form.get('extra_criteria') or '').strip(),
         'onderwijs_criteria': '',
+        'citeer_instructies': (request.form.get('citeer_instructies') or '').strip(),
         'taal_enabled':       bool(request.form.get('taal_enabled')),
         'taal_instructies':   '',
         'stijl_enabled':      bool(request.form.get('stijl_enabled')),
@@ -108,7 +110,7 @@ def onboarding_step2():
         'ai_enabled':         bool(request.form.get('ai_enabled')),
         'ai_instructies':     '',
         'bron_enabled':       bool(request.form.get('bron_enabled')),
-        'bron_instructies':   '',
+        'bron_instructies':   (request.form.get('bron_instructies') or '').strip(),
         'toon':               (request.form.get('toon') or '').strip(),
         'show_suggestions':   bool(request.form.get('show_suggestions')),
         'max_per_categorie':  int(request.form.get('max_per_categorie') or 0) or None,
@@ -143,13 +145,17 @@ def onboarding_step4():
     full_name = (data.get('full_name') or '').strip()
     org_id = data.get('org_id')
 
+    role = data.get('role', 'student')
+    if role not in ('organisatie', 'student'):
+        role = 'student'
+
     token = secrets.token_urlsafe(32)
     expires_at = datetime.utcnow() + timedelta(days=7)
 
     db = get_db()
     db.execute(
         'INSERT INTO invitation_tokens (token, full_name, role, organization_id, created_by, expires_at) VALUES (?,?,?,?,?,?)',
-        (token, full_name or None, 'consumer', org_id or None, session['user_id'], expires_at.isoformat())
+        (token, full_name or None, role, org_id or None, session['user_id'], expires_at.isoformat())
     )
     db.commit()
 
@@ -191,8 +197,8 @@ def invite_accept(token):
         errors = []
         if not username:
             errors.append('Gebruikersnaam is verplicht.')
-        if len(password) < 6:
-            errors.append('Wachtwoord moet minimaal 6 tekens zijn.')
+        if len(password) < 8:
+            errors.append('Wachtwoord moet minimaal 8 tekens zijn.')
         if password != password2:
             errors.append('Wachtwoorden komen niet overeen.')
 
@@ -235,3 +241,58 @@ def welcome():
     db.execute('UPDATE users SET first_login=0 WHERE id=?', (session['user_id'],))
     db.commit()
     return render_template('welcome.html')
+
+
+# ── Configuratiescherm voor de organisatierol ─────────────────────────────────
+
+@login_required
+def organisatie_config():
+    """Configuratiescherm voor organisatie/docent-gebruikers.
+    Toont de rubric-instellingen van de eigen organisatie zodat de docent
+    de aanpasbare criteria kan controleren en bijstellen."""
+    from auth import current_user_org_id
+    import rubric_library
+
+    db = get_db()
+    # Reset first_login vlag zodat ze na de eerste keer direct naar holistic_form gaan
+    db.execute('UPDATE users SET first_login=0 WHERE id=?', (session['user_id'],))
+    db.commit()
+
+    org_id = current_user_org_id()
+    rubrics = rubric_library.list_rubrics(
+        current_app.config['UPLOAD_FOLDER'],
+        organization_id=org_id,
+    )
+    if not rubrics:
+        flash('Nog geen rubric beschikbaar voor jouw opleiding. Neem contact op met de beheerder.', 'warning')
+        return redirect(url_for('holistic_form'))
+
+    rubric = rubrics[0]
+    rec = rubric_library.get_rubric(current_app.config['UPLOAD_FOLDER'], rubric['id'])
+    cfg = holistic_analysis._merge_config(rec.get('feedback_config') if rec else None)
+    return render_template('organisatie_config.html', rubric=rubric, cfg=cfg)
+
+
+@login_required
+def organisatie_config_save(rubric_id):
+    """Sla de door de docent aangepaste criteria op in de rubric."""
+    import rubric_library
+
+    rec = rubric_library.get_rubric(current_app.config['UPLOAD_FOLDER'], rubric_id)
+    if not rec:
+        flash('Rubric niet gevonden.', 'danger')
+        return redirect(url_for('holistic_form'))
+
+    existing_cfg = rec.get('feedback_config') or {}
+    existing_cfg.update({
+        'inhoud_criteria':    (request.form.get('inhoud_criteria') or '').strip(),
+        'extra_criteria':     (request.form.get('extra_criteria') or '').strip(),
+        'citeer_instructies': (request.form.get('citeer_instructies') or '').strip(),
+        'bron_instructies':   (request.form.get('bron_instructies') or '').strip(),
+        'toon':               (request.form.get('toon') or '').strip(),
+        'max_per_categorie':  int(request.form.get('max_per_categorie') or 0) or existing_cfg.get('max_per_categorie'),
+    })
+    rubric_library.update_rubric(
+        current_app.config['UPLOAD_FOLDER'], rubric_id, feedback_config=existing_cfg)
+    flash('Instellingen opgeslagen.', 'success')
+    return redirect(url_for('holistic_form'))

@@ -23,16 +23,17 @@ def add_organization():
     db = get_db()
 
     if request.method == 'POST':
-        name        = request.form['name']
-        description = request.form.get('description', '')
+        name            = request.form['name']
+        description     = request.form.get('description', '')
+        preferred_model = request.form.get('preferred_model', 'claude-haiku-4-5')
 
         if not name:
             flash('Naam is verplicht!', 'danger')
         else:
             try:
                 db.execute(
-                    'INSERT INTO organizations (name, description) VALUES (?,?)',
-                    (name, description)
+                    'INSERT INTO organizations (name, description, preferred_model) VALUES (?,?,?)',
+                    (name, description, preferred_model)
                 )
                 db.commit()
                 flash('Organisatie succesvol toegevoegd!', 'success')
@@ -55,16 +56,17 @@ def edit_organization(id):
         return redirect(url_for('list_organizations'))
 
     if request.method == 'POST':
-        name        = request.form['name']
-        description = request.form.get('description', '')
+        name            = request.form['name']
+        description     = request.form.get('description', '')
+        preferred_model = request.form.get('preferred_model', 'claude-haiku-4-5')
 
         if not name:
             flash('Naam is verplicht!', 'danger')
         else:
             try:
                 db.execute(
-                    'UPDATE organizations SET name=?, description=? WHERE id=?',
-                    (name, description, id)
+                    'UPDATE organizations SET name=?, description=?, preferred_model=? WHERE id=?',
+                    (name, description, preferred_model, id)
                 )
                 db.commit()
                 flash('Organisatie succesvol bijgewerkt!', 'success')

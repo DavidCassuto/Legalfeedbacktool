@@ -38,9 +38,10 @@
 {% if not result %}
 <div class="header" style="margin-bottom:20px;">
   <h1>Feedback op een document</h1>
-  <p>Kies de rubric van je opleiding en upload het studentdocument. De AI leest het hele
-     document en plaatst opbouwende feedback als Word-comments op de juiste plek — om de
-     student te helpen verbeteren. Geen cijfer, geen beoordeling.</p>
+  <p>Upload het studentdocument en kies de rubric van je opleiding. Jij leest het document
+     goed en inhoudelijk — DocuCheck neemt het formuleren, schrijven en invoeren van de
+     feedback op de juiste plek uit handen. Geen cijfer, geen eindoordeel: alleen
+     opbouwende, formatieve feedback.</p>
 </div>
 
 <div class="holo-card">
@@ -131,10 +132,12 @@
           <input type="checkbox" name="bron_enabled" value="1" {% if not form or form.bron_enabled %}checked{% endif %}>
           Bronvermelding <span class="holo-hint" style="display:inline;">(voetnoten inhoudelijk + citeerwijze, bijv. Leidraad — als Word-comment)</span>
         </label>
+        {% if session.get('user_role') != 'student' %}
         <label style="font-weight:500; display:block; margin-top:6px;">
           <input type="checkbox" name="show_suggestions" value="1" {% if form and form.show_suggestions %}checked{% endif %}>
           Suggesties tonen <span class="holo-hint" style="display:inline;">(uit = alleen benoemen wat beter kan)</span>
         </label>
+        {% endif %}
         <div class="holo-hint" style="margin-top:8px;">Inhoudelijke feedback per onderdeel en de toon
           komen uit de rubric zelf.</div>
       </fieldset>
@@ -162,9 +165,10 @@
 </div>
 
 {% if estimate %}
-<div class="holo-card" style="border:2px solid #4D908E;">
-  <h2>2. Kostenschatting (vóór analyse)</h2>
-  <table class="holo">
+<div class=”holo-card” style=”border:2px solid #4D908E;”>
+  <h2>2. Analyse bevestigen</h2>
+  {% if session.get('user_role') == 'admin' %}
+  <table class=”holo”>
     <tbody>
       <tr><td>Model</td><td><strong>{{ estimate.model }}</strong></td></tr>
       <tr><td>Geschat aantal input-tokens</td><td>± {{ '{:,}'.format(estimate.input_tokens).replace(',', '.') }}</td></tr>
@@ -175,12 +179,15 @@
       {% endif %}
     </tbody>
   </table>
-  <div class="holo-hint">Schatting op basis van tekstomvang (≈3,7 tekens/token); de werkelijke
+  <div class=”holo-hint”>Schatting op basis van tekstomvang (≈3,7 tekens/token); de werkelijke
     kosten kunnen iets afwijken. Bij meerdere studenten met dezelfde rubric wordt het
     rubric-deel gecachet, dus volgende runs zijn goedkoper.</div>
-  <form method="POST" action="{{ url_for('holistic_analyze') }}" style="margin-top:14px;">
-    <input type="hidden" name="job_token" value="{{ job_token }}">
-    <button class="holo-btn" type="submit">✓ Bevestig en analyseer ({{ original_name }})</button>
+  {% else %}
+  <p class=”holo-hint”>Het document is klaar voor analyse. Klik op de knop om de feedback te genereren.</p>
+  {% endif %}
+  <form method=”POST” action=”{{ url_for('holistic_analyze') }}” style=”margin-top:14px;”>
+    <input type=”hidden” name=”job_token” value=”{{ job_token }}”>
+    <button class=”holo-btn” type=”submit”>✓ Bevestig en analyseer ({{ original_name }})</button>
   </form>
 </div>
 {% endif %}
@@ -194,65 +201,68 @@
      <a href="{{ url_for('holistic_form') }}" style="color:#FFD700; text-decoration:underline;">← Nieuwe analyse</a></p>
 </div>
 
-<div class="holo-card">
-  <h2>Formatieve feedback</h2>
-  <p class="holo-hint">Dit is opbouwende feedback om de student te helpen verbeteren — geen cijfer of beoordeling.</p>
-  <p style="margin-top:8px;">
+<div class=”holo-card”>
+  <h2>Feedback klaar</h2>
+  <p class=”holo-hint”>Opbouwende, formatieve feedback — geen cijfer of beoordeling.</p>
+  {% if session.get('user_role') == 'admin' %}
+  <p style=”margin-top:8px;”>
     {% if result.product_type %}Producttype: <strong>{{ result.product_type }}</strong> &middot;{% endif %}
     Model: <strong>{{ result.model }}</strong> &middot;
     tokens: {{ result.usage.input_tokens }} in / {{ result.usage.output_tokens }} uit
-    {%- if result.usage.cache_read %} &middot; {{ result.usage.cache_read }} uit cache ♻️{% endif %} &middot;
+    {%- if result.usage.cache_read %} &middot; {{ result.usage.cache_read }} uit cache{% endif %} &middot;
     comments geplaatst: <strong>{{ result.placed_count }}</strong> &middot;
     taalfouten gemarkeerd: <strong>{{ result.highlights_placed }}</strong>
-    {% if result.unplaced %} &middot; <span class="sev-aandachtspunt">{{ result.unplaced|length }} niet te plaatsen</span>{% endif %}
+    {% if result.unplaced %} &middot; <span class=”sev-aandachtspunt”>{{ result.unplaced|length }} niet te plaatsen</span>{% endif %}
   </p>
   {% if result.annex_info %}
-    <p class="holo-hint">
+    <p class=”holo-hint”>
       {% if result.annex_info.stripped %}
-        📎 Bijlagen overgeslagen vanaf “{{ result.annex_info.annex_heading }}”.
-        {% if result.annex_info.beroepsproduct %}📦 Beroepsproduct meegenomen: “{{ result.annex_info.beroepsproduct }}”.{% else %}<span class="sev-aandachtspunt">Geen apart beroepsproduct-kopje gevonden — controleer of het is meegenomen.</span>{% endif %}
-        ({{ result.annex_info.chars_analyzed }}/{{ result.annex_info.chars_total }} tekens geanalyseerd)
+        Bijlagen overgeslagen vanaf “{{ result.annex_info.annex_heading }}”.
+        {% if result.annex_info.beroepsproduct %}Beroepsproduct meegenomen: “{{ result.annex_info.beroepsproduct }}”.{% else %}<span class=”sev-aandachtspunt”>Geen apart beroepsproduct-kopje gevonden.</span>{% endif %}
+        ({{ result.annex_info.chars_analyzed }}/{{ result.annex_info.chars_total }} tekens)
       {% else %}
-        📄 Hele document geanalyseerd ({{ result.annex_info.chars_total }} tekens).
+        Heel document geanalyseerd ({{ result.annex_info.chars_total }} tekens).
       {% endif %}
     </p>
   {% endif %}
-  <p style="margin-top:14px;">
-    <a class="dl-btn" href="{{ url_for('holistic_download', naam=download_name) }}">
-      ⬇️ Download document met feedback-comments
+  {% endif %}
+  <p style=”margin-top:14px;”>
+    <a class=”dl-btn” href=”{{ url_for('holistic_download', naam=download_name) }}”>
+      Download document met feedback-comments
     </a>
   </p>
 </div>
 
-<div class="holo-card">
+{% if session.get('user_role') == 'admin' %}
+<div class=”holo-card”>
   <h2>Feedback per onderdeel</h2>
   {% for item in result.rubric_items %}
-    <div class="holo-item">
+    <div class=”holo-item”>
       <strong>{{ item.naam }}</strong>
-      {% if item.feedback %}<p style="margin-top:4px;">{{ item.feedback }}</p>{% endif %}
+      {% if item.feedback %}<p style=”margin-top:4px;”>{{ item.feedback }}</p>{% endif %}
       {% for f in item.findings or [] %}
-        <div class="holo-quote">
+        <div class=”holo-quote”>
           “{{ f.quote }}”
-          {% if f.severity %}<span class="sev-{{ f.severity }}">[{{ f.severity }}]</span>{% endif %}
+          {% if f.severity %}<span class=”sev-{{ f.severity }}”>[{{ f.severity }}]</span>{% endif %}
         </div>
         <div>{{ f.comment }}{% if f.suggestie %} <em>Suggestie: {{ f.suggestie }}</em>{% endif %}</div>
       {% endfor %}
     </div>
   {% endfor %}
   {% if result.eindbeeld %}
-    <div class="holo-item" style="border-left-color:#52796F;">
+    <div class=”holo-item” style=”border-left-color:#52796F;”>
       <strong>Belangrijkste punten om aan te werken</strong>
-      <p style="margin-top:4px;">{{ result.eindbeeld }}</p>
+      <p style=”margin-top:4px;”>{{ result.eindbeeld }}</p>
     </div>
   {% endif %}
 </div>
 
 {% if result.schrijfkwaliteit %}
-<div class="holo-card">
-  <h2>Juridische schrijfkwaliteit <span class="holo-hint" style="display:inline;">(als comment in het document)</span></h2>
+<div class=”holo-card”>
+  <h2>Schrijfkwaliteit <span class=”holo-hint” style=”display:inline;”>(als comment in het document)</span></h2>
   {% for f in result.schrijfkwaliteit %}
-    <div class="holo-item">
-      <div class="holo-quote">“{{ f.quote }}” {% if f.severity %}<span class="sev-{{ f.severity }}">[{{ f.severity }}]</span>{% endif %}</div>
+    <div class=”holo-item”>
+      <div class=”holo-quote”>”{{ f.quote }}” {% if f.severity %}<span class=”sev-{{ f.severity }}”>[{{ f.severity }}]</span>{% endif %}</div>
       <div>{{ f.comment }}{% if f.suggestie %} <em>Suggestie: {{ f.suggestie }}</em>{% endif %}</div>
     </div>
   {% endfor %}
@@ -260,11 +270,11 @@
 {% endif %}
 
 {% if result.ai_stijl %}
-<div class="holo-card">
-  <h2>AI-stijldetectie <span class="holo-hint" style="display:inline;">(als comment in het document)</span></h2>
+<div class=”holo-card”>
+  <h2>AI-stijldetectie <span class=”holo-hint” style=”display:inline;”>(als comment in het document)</span></h2>
   {% for f in result.ai_stijl %}
-    <div class="holo-item">
-      <div class="holo-quote">“{{ f.quote }}”</div>
+    <div class=”holo-item”>
+      <div class=”holo-quote”>”{{ f.quote }}”</div>
       <div>{{ f.comment }}</div>
     </div>
   {% endfor %}
@@ -272,11 +282,11 @@
 {% endif %}
 
 {% if result.bronvermelding %}
-<div class="holo-card">
-  <h2>Bronvermelding / citeerwijze <span class="holo-hint" style="display:inline;">(voetnoten — als comment in het document)</span></h2>
+<div class=”holo-card”>
+  <h2>Bronvermelding / citeerwijze <span class=”holo-hint” style=”display:inline;”>(als comment in het document)</span></h2>
   {% for f in result.bronvermelding %}
-    <div class="holo-item">
-      <div class="holo-quote">“{{ f.quote }}” {% if f.severity %}<span class="sev-{{ f.severity }}">[{{ f.severity }}]</span>{% endif %}</div>
+    <div class=”holo-item”>
+      <div class=”holo-quote”>”{{ f.quote }}” {% if f.severity %}<span class=”sev-{{ f.severity }}”>[{{ f.severity }}]</span>{% endif %}</div>
       <div>{{ f.comment }}{% if f.suggestie %} <em>Suggestie: {{ f.suggestie }}</em>{% endif %}</div>
     </div>
   {% endfor %}
@@ -284,15 +294,15 @@
 {% endif %}
 
 {% if result.taalfouten %}
-<div class="holo-card">
-  <h2>Gemarkeerde taalfouten <span class="holo-hint" style="display:inline;">(geel gearceerd in het document, geen comment)</span></h2>
-  <table class="holo">
+<div class=”holo-card”>
+  <h2>Gemarkeerde taalfouten <span class=”holo-hint” style=”display:inline;”>(geel gearceerd, geen comment)</span></h2>
+  <table class=”holo”>
     <thead><tr><th>Gemarkeerd</th><th>In context</th><th>Type</th></tr></thead>
     <tbody>
       {% for t in result.taalfouten %}
         <tr>
-          <td><span style="background:#FFF3B0;">{{ t.fout or t.quote }}</span></td>
-          <td class="holo-hint">{{ t.quote }}</td>
+          <td><span style=”background:#FFF3B0;”>{{ t.fout or t.quote }}</span></td>
+          <td class=”holo-hint”>{{ t.quote }}</td>
           <td>{{ t.type }}</td>
         </tr>
       {% endfor %}
@@ -302,19 +312,19 @@
 {% endif %}
 
 {% if result.unplaced %}
-<div class="holo-card">
+<div class=”holo-card”>
   <h2>Niet-geplaatste bevindingen</h2>
-  <div class="holo-warnbox">
-    Deze bevindingen konden niet aan een exacte passage in het document gekoppeld worden
-    (het citaat week te veel af). Ze staan hier zodat er niets verloren gaat:
-    <ul style="margin-top:8px;">
+  <div class=”holo-warnbox”>
+    Deze bevindingen konden niet aan een exacte passage gekoppeld worden:
+    <ul style=”margin-top:8px;”>
       {% for f in result.unplaced %}
         <li><strong>{{ f.criteria_name }}</strong>: {{ f.message }}
-            <div class="holo-quote">“{{ f.offending_snippet }}”</div></li>
+            <div class=”holo-quote”>”{{ f.offending_snippet }}”</div></li>
       {% endfor %}
     </ul>
   </div>
 </div>
 {% endif %}
-{% endif %}
+{% endif %}{# einde admin-only resultaatkaarten #}
+{% endif %}{# einde result #}
 {% endblock %}

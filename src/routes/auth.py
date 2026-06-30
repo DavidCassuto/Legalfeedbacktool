@@ -27,13 +27,16 @@ def login():
             session['username']  = user['username']
             session['user_role'] = user['role']
             session['organization_id'] = user['organization_id']
-            # Eerste login → welkomstscherm (alleen voor consumers)
-            if user['role'] == 'consumer' and user['first_login']:
-                return redirect(url_for('welcome'))
-            if user['role'] == 'admin':
+            role = user['role']
+            if role == 'admin':
                 return redirect(url_for('index'))
-            else:
-                return redirect(url_for('holistic_form'))
+            if role == 'organisatie' and user['first_login']:
+                # Eerste login organisatie/docent → configuratiescherm
+                return redirect(url_for('organisatie_config'))
+            if role == 'consumer' and user['first_login']:
+                # Oude consumer-rol: generiek welkomstscherm
+                return redirect(url_for('welcome'))
+            return redirect(url_for('holistic_form'))
         else:
             flash('Ongeldige gebruikersnaam of wachtwoord.', 'danger')
 
